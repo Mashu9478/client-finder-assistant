@@ -21,9 +21,16 @@ your lead list:
 - You shortlist leads, add notes, track them from *new* to *won*, and export
   the list to a spreadsheet.
 
-Still to come: AI-written cold emails that you approve before sending
-(stage 2), voice control (stage 3), and a finder for paid projects on job
-boards (stage 4).
+**Email writer** turns one lead's findings into a finished email:
+
+- Press **Write email** on a lead. The app writes a complete, professional
+  email for that one business from the problems found on its website and the
+  upgrade ideas, and saves it with the lead.
+- Edit it if you like, then press **Copy email** or **Open in Gmail** and send
+  it yourself. The app never sends anything.
+
+Still to come: sending approved emails from inside the app, voice control, and
+a finder for paid projects on job boards.
 
 ## Set up (once)
 
@@ -98,6 +105,33 @@ Tips:
 - "Site blocks bots" means the site asked automated tools to stay out, and
   the app respected that. Open the site yourself to judge it.
 
+## Writing emails
+
+Each email is written for one business from that business's own audit. It
+names the two or three most important problems in plain language, suggests
+fixes, links your portfolio, invites a reply by email or WhatsApp, and never
+mentions prices.
+
+| | Standard wording | Claude |
+|---|---|---|
+| Needs | Nothing | A Claude API key in Settings |
+| Cost | Free | A small charge per email on your Claude account |
+| Result | A clear, correct email built from fixed sentences | An email written fresh for each business |
+
+If a Claude key is saved but Claude cannot be reached (wrong key, no credit),
+the app writes the standard email instead and tells you why.
+
+Before you send:
+
+- **Read every email.** The checks are automatic and sometimes wrong. Open the
+  site and confirm each point is true.
+- **Send a few a day, not hundreds.** Bulk cold email from a personal Gmail
+  gets the account restricted.
+- **Keep the last line.** The "reply no thanks" line is your opt-out. Many
+  countries require one, along with your real name and contact details, and
+  some (including Canada and much of Europe) restrict unsolicited business
+  email further. Check the rules for the countries you write to.
+
 ## What the audit does and does not do
 
 The audit loads a site's homepage, up to two contact or about pages, and a
@@ -165,6 +199,7 @@ app/places.py    Google Places Text Search client
 app/osm.py       free search: Nominatim + Overpass (OpenStreetMap)
 app/audit.py     website audit, issues, ideas, score
 app/contacts.py  public email / phone / social extraction
+app/emailer.py   outreach email per lead (Claude API or built-in template)
 app/jobs.py      background searches and audits
 app/db.py        SQLite storage
 app/config.py    local settings

@@ -25,7 +25,7 @@ if not exist ".venv\Scripts\python.exe" (
   if errorlevel 1 goto fail
 )
 
-".venv\Scripts\python.exe" -c "import fastapi, uvicorn, httpx, bs4" >nul 2>nul
+".venv\Scripts\python.exe" -c "import fastapi, uvicorn, httpx, bs4, jinja2" >nul 2>nul
 if errorlevel 1 (
   echo Installing what the app needs...
   ".venv\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check -r requirements.txt

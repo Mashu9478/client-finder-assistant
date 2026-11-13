@@ -27,10 +27,15 @@ const SOCIAL_LABELS = {
   yelp: 'Yelp', threads: 'Threads',
 };
 const SORTS = ['score', 'newest', 'name', 'rating'];
-const FILTER_KEYS = ['q', 'status', 'min_score', 'has_email', 'has_website', 'sort', 'search_id'];
+const FILTER_KEYS = ['q', 'status', 'min_score', 'has_email', 'has_draft', 'has_website', 'sort', 'search_id'];
 const DEFAULT_FILTERS = Object.freeze({
-  q: '', status: '', min_score: '', has_email: '', has_website: '', sort: 'score', search_id: '',
+  q: '', status: '', min_score: '', has_email: '', has_draft: '', has_website: '', sort: 'score', search_id: '',
 });
+const MODEL_OPTIONS = [
+  ['claude-sonnet-5-5', 'Best quality'],
+  ['claude-haiku-5-5', 'Fastest and cheapest'],
+];
+const EMAIL_SOURCE_LABELS = { claude: 'Written by Claude', template: 'Standard wording', manual: 'Written by you' };
 const OFFLINE_MESSAGE = 'Client Finder is not answering. Check that the app is still running on this computer.';
 const POLL_MS = 2000;
 const POLL_OFFLINE_MS = 5000;
@@ -105,7 +110,7 @@ function announce(text) {
  * Keyed list update. Rows whose data did not change keep their DOM node, so
  * polling never steals focus, closes an open dropdown or resets scroll.
  */
-function syncList(parent, items, keyOf, render) {
+function syncList(parent, items, keyOf, render, sigOf) {
   const existing = new Map();
   for (const child of Array.from(parent.children)) {
     if (child.dataset.key !== undefined) existing.set(child.dataset.key, child);
@@ -113,7 +118,7 @@ function syncList(parent, items, keyOf, render) {
   let prev = null;
   for (const item of items) {
     const key = String(keyOf(item));
-    const sig = JSON.stringify(item);
+    const sig = sigOf ? sigOf(item) : JSON.stringify(item);
     let el = existing.get(key);
     const active = document.activeElement;
     const busySelect = el && active && active.tagName === 'SELECT' && el.contains(active);
@@ -467,6 +472,7 @@ function parseHash(hash) {
     if (STATUSES.includes(params.get('status'))) filters.status = params.get('status');
     if (['40', '60', '80'].includes(params.get('min_score'))) filters.min_score = params.get('min_score');
     if (params.get('has_email') === 'true') filters.has_email = 'true';
+    if (params.get('has_draft') === 'true') filters.has_draft = 'true';
     if (['true', 'false'].includes(params.get('has_website'))) filters.has_website = params.get('has_website');
     if (SORTS.includes(params.get('sort'))) filters.sort = params.get('sort');
     if (/^\d+$/.test(params.get('search_id') || '')) filters.search_id = params.get('search_id');
@@ -548,6 +554,7 @@ function enterView(view) {
     renderSearches();
     loadSearches();
   } else if (view === 'leads') {
+    if (!state.settings) loadSettings({ quiet: true });
     renderLeads();
     loadStats();
     if (!state.searchesLoaded) loadSearches({ quiet: true });
@@ -615,6 +622,7 @@ async function loadSettings({ quiet = false } = {}) {
   try {
     state.settings = await api('/api/settings');
     renderKeyNotice();
+    refreshEmailSection(); // shows which email writer is in use
     return true;
   } catch (err) {
     reportError(err, { quiet });
@@ -702,8 +710,13 @@ async function loadDetail(id, { quiet = false } = {}) {
     state.detail = lead;
     state.detailFailed = false;
     renderDrawer();
+    if (emailJumpId === id) {
+      emailJumpId = null;
+      showEmailSection({ focus: false }); // the layout above it may have changed
+    }
   } catch (err) {
     if (state.detailId !== id || ticket !== detailRequest) return;
+    emailJumpId = null;
     reportError(err, { quiet });
     if (err.status === 404 || !state.detail) {
       closeDrawer();
@@ -916,6 +929,33 @@ function statusSelect(lead, id) {
   }, STATUSES.map((s) => h('option', { value: s }, STATUS_LABELS[s])));
 }
 
+/** The Email column: write a draft, see the saved one, or wait for the audit. */
+function emailCell(lead) {
+  const name = leadName(lead);
+  const id = String(lead.id);
+  if (writing.has(lead.id)) {
+    return h('td', null, h('button', {
+      type: 'button', class: 'btn btn--mini', 'aria-disabled': 'true', dataset: { fk: 'email' },
+      title: 'Writing the email. This can take up to a minute.',
+      'aria-label': `Writing the email for ${name}. This can take up to a minute.`,
+    }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), h('span', null, 'Writing…')));
+  }
+  if (lead.has_draft) {
+    return h('td', null, h('button', {
+      type: 'button', class: 'btn btn--mini is-ready', dataset: { emailView: id, fk: 'email' },
+      'aria-label': `View email for ${name}`,
+    }, 'View email'));
+  }
+  if (isAuditing(lead)) {
+    return h('td', null, h('span', { class: 'none', 'aria-hidden': 'true' }, '–'), srOnly('Available after the website check'));
+  }
+  return h('td', null, h('button', {
+    type: 'button', class: 'btn btn--mini', dataset: { emailWrite: id, fk: 'email' },
+    title: 'Writes an email to this business from its website check. This can take up to a minute.',
+    'aria-label': `Write email for ${name}`,
+  }, 'Write email'));
+}
+
 function leadRow(lead) {
   const name = leadName(lead);
   const issues = Array.isArray(lead.top_issues) ? lead.top_issues.filter(Boolean) : [];
@@ -964,6 +1004,7 @@ function leadRow(lead) {
     h('td', null,
       h('button', { type: 'button', class: 'biz-name', title: name, dataset: { open: String(lead.id), fk: 'open' } }, name),
       lead.category ? h('p', { class: 'biz-cat' }, lead.category) : null),
+    emailCell(lead),
     found,
     contact,
     rating,
@@ -971,7 +1012,7 @@ function leadRow(lead) {
 }
 
 function hasNarrowingFilters(f) {
-  return !!(f.q || f.status || f.min_score || f.has_email || f.has_website);
+  return !!(f.q || f.status || f.min_score || f.has_email || f.has_draft || f.has_website);
 }
 
 function currentSearch() {
@@ -990,7 +1031,8 @@ function renderLeads() {
   const f = route.filters;
   const hasRows = state.leadsLoaded && leads.length > 0;
 
-  if (hasRows) syncList(els.leadRows, leads, (l) => l.id, leadRow);
+  // A row is also redrawn when its "Writing…" state changes.
+  if (hasRows) syncList(els.leadRows, leads, (l) => l.id, leadRow, (l) => JSON.stringify(l) + (writing.has(l.id) ? '|writing' : ''));
   else els.leadRows.replaceChildren();
   els.leadTableWrap.hidden = !hasRows;
   els.fClear.hidden = !hasNarrowingFilters(f);
@@ -1066,6 +1108,7 @@ function syncFilterControls() {
   els.fWebsite.value = f.has_website;
   els.fSort.value = f.sort;
   els.fEmail.checked = f.has_email === 'true';
+  els.fDraft.checked = f.has_draft === 'true';
 }
 
 function readFilterControls() {
@@ -1074,6 +1117,7 @@ function readFilterControls() {
     status: els.fStatus.value,
     min_score: els.fScore.value,
     has_email: els.fEmail.checked ? 'true' : '',
+    has_draft: els.fDraft.checked ? 'true' : '',
     has_website: els.fWebsite.value,
     sort: els.fSort.value || 'score',
     search_id: route.filters.search_id,
@@ -1129,12 +1173,14 @@ async function exportCsv(event) {
 /** Applies a lead the server just sent back to both the table and the drawer. */
 function mergeLead(updated) {
   if (!updated || updated.id === undefined) return;
-  const { audit, ...listFields } = updated;
+  const { audit, email, ...listFields } = updated;
+  if (email !== undefined) listFields.has_draft = !!email; // keeps the table's Email column in step
   const index = state.leads.findIndex((l) => l.id === updated.id);
   if (index !== -1) state.leads[index] = { ...state.leads[index], ...listFields };
   if (state.detailId === updated.id) {
     state.detail = { ...(state.detail || {}), ...listFields };
     if (audit !== undefined) state.detail.audit = audit;
+    if (email !== undefined) state.detail.email = email;
     renderDrawer();
     // A refresh that was already on its way would bring back the old values.
     if (detailInFlight > 0) loadDetail(updated.id, { quiet: true });
@@ -1176,7 +1222,7 @@ async function changeStatus(id, status, select) {
 
 let drawerOpener = null;
 let drawerSig = '';
-const notes = { saved: null, saving: false, again: false };
+const notes = { saved: null, saving: false, sending: null, queued: null };
 
 function openLead(id, opener) {
   drawerOpener = opener || document.activeElement;
@@ -1202,18 +1248,25 @@ function setBackgroundInert(flag) {
 
 function showDrawer(id) {
   const wasOpen = state.detailId !== null;
-  if (wasOpen) saveNotes(false);
-  else if (!drawerOpener) drawerOpener = document.activeElement;
+  if (wasOpen) {
+    saveNotes(false);
+    saveEmail(false);
+  } else if (!drawerOpener) drawerOpener = document.activeElement;
 
   state.detailId = id;
   state.detailFailed = false;
-  const known = state.leads.find((l) => l.id === id) || (state.seedLead && state.seedLead.id === id ? state.seedLead : null);
+  const known = (state.seedLead && state.seedLead.id === id ? state.seedLead : null) || state.leads.find((l) => l.id === id);
   state.seedLead = null;
-  state.detail = known ? { ...known } : null; // `audit` stays undefined until the full lead arrives
+  state.detail = known ? { ...known } : null; // `audit` and `email` stay undefined until the full lead arrives
   drawerSig = '';
   notes.saved = null;
   setResult(els.dNotesMsg, '', '');
   showDeleteConfirm(false);
+  emailUi.savedSubject = null;
+  emailUi.savedBody = null;
+  emailUi.error = '';
+  emailUi.confirm = null;
+  setResult(els.dEmailMsg, '', '');
 
   els.drawer.hidden = false;
   document.body.classList.add('drawer-open');
@@ -1221,6 +1274,8 @@ function showDrawer(id) {
   renderDrawer();
   els.drawerScroll.scrollTop = 0;
   els.drawerPanel.focus({ preventScroll: true });
+  if (emailJumpId !== null && emailJumpId !== id) emailJumpId = null;
+  if (emailJumpId === id) showEmailSection({ focus: true });
   markOpenRow();
   loadDetail(id);
 }
@@ -1228,6 +1283,8 @@ function showDrawer(id) {
 function hideDrawer() {
   if (state.detailId === null) return;
   saveNotes(false); // do not lose notes typed just before closing
+  saveEmail(false); // nor changes to the email
+  emailJumpId = null;
   const closedId = state.detailId;
   state.detailId = null;
   state.detail = null;
@@ -1443,6 +1500,7 @@ function renderDrawer() {
       els.dStatus.disabled = true;
       els.dNotes.disabled = true;
       els.dNotes.value = '';
+      renderEmailSection();
       renderDrawerActions();
       return;
     }
@@ -1476,6 +1534,7 @@ function renderDrawer() {
       notes.saved = serverNotes;
     }
 
+    renderEmailSection();
     fill(els.dAudit, drawerAudit(lead));
 
     const issueGroups = drawerIssues(lead);
@@ -1515,11 +1574,18 @@ async function saveNotes(explicit) {
     return;
   }
   if (notes.saving) {
-    notes.again = true;
+    // Sent when the running save ends, even if the drawer has closed (unless it is the same text).
+    const sending = notes.sending;
+    notes.queued = sending && sending.id === id && sending.value === value ? null : { id, value };
     return;
   }
+  await runNotesSave(id, value);
+}
+
+async function runNotesSave(id, value) {
   notes.saving = true;
-  setResult(els.dNotesMsg, 'busy', 'Saving…');
+  notes.sending = { id, value };
+  if (state.detailId === id) setResult(els.dNotesMsg, 'busy', 'Saving…');
   try {
     const updated = await api(`/api/leads/${id}`, { method: 'PATCH', body: { notes: value } });
     if (state.detailId === id) {
@@ -1532,10 +1598,10 @@ async function saveNotes(explicit) {
     else reportError(new ApiError(`Notes not saved. ${err.message}`, err.status));
   } finally {
     notes.saving = false;
-    if (notes.again) {
-      notes.again = false;
-      if (state.detailId === id) saveNotes(false);
-    }
+    notes.sending = null;
+    const next = notes.queued;
+    notes.queued = null;
+    if (next) runNotesSave(next.id, next.value);
   }
 }
 
@@ -1564,6 +1630,9 @@ async function deleteLead() {
       await api(`/api/leads/${id}`, { method: 'DELETE' });
       const name = lead ? leadName(lead) : 'Lead';
       notes.saved = null; // nothing left to save
+      notes.queued = null;
+      emailUi.savedSubject = null;
+      emailUi.queued = null;
       state.leads = state.leads.filter((l) => l.id !== id);
       drawerOpener = els.fQ;
       closeDrawer();
@@ -1577,6 +1646,318 @@ async function deleteLead() {
   });
 }
 
+/* ------------------------------------------------------------------ */
+/* Email to send (one saved draft per lead; the app never sends it)    */
+/* ------------------------------------------------------------------ */
+
+const writing = new Set(); // ids of leads whose email is being written right now
+const emailUi = { savedSubject: null, savedBody: null, saving: null, sending: null, queued: null, error: '', confirm: null };
+let emailJumpId = null; // open this lead's drawer at the email section
+
+const isOff = (el) => el.getAttribute('aria-disabled') === 'true';
+
+function setOff(el, flag) {
+  if (flag) el.setAttribute('aria-disabled', 'true');
+  else el.removeAttribute('aria-disabled');
+}
+
+function refreshEmailSection() {
+  if (state.detailId !== null) keepDrawerFocus(renderEmailSection);
+}
+
+function emailIsDirty() {
+  return emailUi.savedSubject !== null
+    && (els.dEmailSubject.value !== emailUi.savedSubject || els.dEmailBody.value !== emailUi.savedBody);
+}
+
+/** Scrolls the drawer so the email section is at the top, and optionally moves focus to it. */
+function showEmailSection({ focus }) {
+  const delta = els.dEmailSection.getBoundingClientRect().top - els.drawerScroll.getBoundingClientRect().top;
+  els.drawerScroll.scrollTop += delta - 4;
+  if (focus) els.dEmailTitle.focus({ preventScroll: true });
+}
+
+function gmailUrl() {
+  const enc = (text) => {
+    try {
+      return encodeURIComponent(text);
+    } catch {
+      return encodeURIComponent(String(text).replace(/[\uD800-\uDFFF]/g, '')); // broken characters cannot go in a link
+    }
+  };
+  const email = state.detail && state.detail.email;
+  const to = email && typeof email.to === 'string' ? email.to.trim() : '';
+  const parts = ['view=cm', 'fs=1'];
+  if (to) parts.push(`to=${enc(to)}`);
+  parts.push(`su=${enc(els.dEmailSubject.value)}`, `body=${enc(els.dEmailBody.value)}`);
+  return `https://mail.google.com/mail/?${parts.join('&')}`;
+}
+
+function updateGmailLink() {
+  els.dEmailGmail.href = gmailUrl();
+}
+
+/** Rebuilds a small generated block only when what it shows has changed. */
+function fillIfChanged(el, sig, build) {
+  if (el._sig === sig) return;
+  el._sig = sig;
+  fill(el, build());
+}
+
+function renderEmailSection() {
+  const id = state.detailId;
+  if (id === null) return;
+  const lead = state.detail;
+  const email = lead ? lead.email : undefined;
+  const busy = writing.has(id);
+  const hasDraft = !!email;
+  // The full lead has arrived once `audit` is set; the short table form already says when there is no draft.
+  const known = email !== undefined || (!!lead && (lead.audit !== undefined || lead.has_draft === false));
+
+  els.dEmailBusy.hidden = !busy;
+  showFormError(els.dEmailError, busy ? '' : emailUi.error);
+  els.dEmailLoading.hidden = known || busy || state.detailFailed;
+
+  const showEmpty = !hasDraft && (known || busy);
+  els.dEmailEmpty.hidden = !showEmpty;
+  if (showEmpty) {
+    const auditing = isAuditing(lead);
+    setOff(els.dEmailWrite, busy || auditing);
+    els.dEmailWriteLabel.textContent = busy ? 'Writing…' : 'Write email';
+    const writer = state.settings && state.settings.email_writer;
+    let line = '';
+    if (auditing) line = 'You can write the email once the website check has finished.';
+    else if (writer === 'claude') line = 'Written by Claude from this lead’s findings.';
+    else if (writer === 'template') line = 'Uses the standard wording. Add a Claude key in Settings for an email tailored to each business.';
+    els.dEmailWriter.textContent = line;
+    els.dEmailWriter.hidden = !line;
+  }
+
+  els.dEmailDraft.hidden = !hasDraft;
+  if (!hasDraft) {
+    emailUi.savedSubject = null;
+    emailUi.savedBody = null;
+    emailUi.confirm = null;
+    return;
+  }
+
+  // Fields: take the server's text unless the user is in the middle of changing it.
+  const active = document.activeElement;
+  const editing = active === els.dEmailSubject || active === els.dEmailBody;
+  if (emailUi.savedSubject === null || (!emailIsDirty() && !editing)) {
+    els.dEmailSubject.value = typeof email.subject === 'string' ? email.subject : '';
+    els.dEmailBody.value = typeof email.body === 'string' ? email.body : '';
+    emailUi.savedSubject = els.dEmailSubject.value; // read back: the browser tidies line endings
+    emailUi.savedBody = els.dEmailBody.value;
+  }
+  els.dEmailSubject.readOnly = busy;
+  els.dEmailBody.readOnly = busy;
+  updateGmailLink();
+
+  const note = typeof email.note === 'string' ? email.note.trim() : '';
+  els.dEmailNote.hidden = !note;
+  fillIfChanged(els.dEmailNote, note, () => (note ? [icon('alert'), h('p', null, note)] : []));
+
+  const to = typeof email.to === 'string' ? email.to.trim() : '';
+  fillIfChanged(els.dEmailTo, to, () => [
+    h('span', { class: 'email-to-label' }, 'To'),
+    to
+      ? h('div', { class: 'contact-line' }, h('span', null, to), copyButton(to, 'email address', 'copy-email-to'))
+      : h('p', { class: 'none' }, 'No email address found for this business. Use their phone number or website contact form.'),
+  ]);
+
+  const source = EMAIL_SOURCE_LABELS[email.source] || '';
+  const when = fmtWhen(email.generated_at);
+  fillIfChanged(els.dEmailMeta, JSON.stringify([source, when, !!email.edited]), () => [
+    source ? h('span', null, source) : null,
+    when ? h('span', null, when) : null,
+    email.edited ? h('span', { class: 'tag' }, 'Edited') : null,
+  ]);
+
+  for (const el of [els.dEmailSave, els.dEmailCopy, els.dEmailCopySubject, els.dEmailGmail, els.dEmailRewrite, els.dEmailDiscard]) {
+    setOff(el, busy);
+  }
+
+  const confirm = busy ? null : emailUi.confirm;
+  els.dEmailConfirm.hidden = !confirm;
+  els.dEmailActions.hidden = !!confirm;
+  if (confirm === 'rewrite') {
+    fill(els.dEmailConfirmText, h('strong', null, 'Write this email again?'), ' The new version replaces the text above, including your changes.');
+    els.dEmailConfirmYesLabel.textContent = 'Yes, write again';
+    els.dEmailConfirmNo.textContent = 'Keep this email';
+  } else if (confirm === 'discard') {
+    fill(els.dEmailConfirmText, h('strong', null, 'Discard this draft?'), ' The email text is removed. You can write a new one at any time.');
+    els.dEmailConfirmYesLabel.textContent = 'Yes, discard draft';
+    els.dEmailConfirmNo.textContent = 'Keep draft';
+  }
+}
+
+function askEmailConfirm(kind) {
+  emailUi.confirm = kind;
+  emailUi.error = '';
+  renderEmailSection();
+  els.dEmailConfirmNo.focus();
+}
+
+function cancelEmailConfirm() {
+  const kind = emailUi.confirm;
+  emailUi.confirm = null;
+  renderEmailSection();
+  (kind === 'discard' ? els.dEmailDiscard : els.dEmailRewrite).focus();
+}
+
+/**
+ * Asks the server to write (or rewrite) the email for one lead. It can take
+ * up to a minute, so the row and the drawer both show that it is under way.
+ */
+async function writeEmail(id, { openAfter = false } = {}) {
+  if (writing.has(id)) return;
+  const shown = () => state.detailId === id;
+  const lead = state.leads.find((l) => l.id === id) || (shown() ? state.detail : null);
+  const name = lead ? leadName(lead) : 'this lead';
+
+  writing.add(id);
+  if (shown()) {
+    emailUi.error = '';
+    emailUi.confirm = null;
+  }
+  if (route.view === 'leads') renderLeads();
+  refreshEmailSection();
+  if (shown()) showEmailSection({ focus: false }); // bring the "Writing…" line into view
+  announce(`Writing the email for ${name}. This can take up to a minute.`);
+
+  try {
+    await settleEmailSaves(id); // a save on its way lands first; the new text then replaces it
+    const updated = await api(`/api/leads/${id}/email`, { method: 'POST' });
+    writing.delete(id);
+    if (shown()) emailUi.savedSubject = null; // show the new text, even over changes that were not saved
+    mergeLead(updated);
+    if (shown()) {
+      refreshEmailSection();
+      showEmailSection({ focus: true });
+      announce('The email is ready.');
+    } else if (openAfter && state.detailId === null && route.view === 'leads') {
+      state.seedLead = updated;
+      emailJumpId = id;
+      openLead(id, els.leadRows.querySelector(`tr[data-id="${id}"] [data-fk="email"]`));
+    } else {
+      toast(`The email for ${name} is ready.`);
+    }
+  } catch (err) {
+    writing.delete(id);
+    if (route.view === 'leads') renderLeads();
+    if (shown()) {
+      emailUi.error = err.message;
+      refreshEmailSection();
+    } else {
+      reportError(err);
+    }
+  }
+}
+
+/**
+ * Saves changes to the subject and body. One save runs at a time; a change
+ * made meanwhile is queued and sent next, even if the drawer has closed.
+ */
+function saveEmail(explicit) {
+  const id = state.detailId;
+  if (id === null || emailUi.savedSubject === null || !state.detail || !state.detail.email || writing.has(id)) return;
+  if (!emailIsDirty()) {
+    if (explicit && !emailUi.saving) setResult(els.dEmailMsg, 'ok', 'Changes saved');
+    return;
+  }
+  const job = { id, subject: els.dEmailSubject.value, body: els.dEmailBody.value };
+  const same = (other) => !!other && other.id === job.id && other.subject === job.subject && other.body === job.body;
+  if (!emailUi.saving) emailUi.saving = runEmailSave(job);
+  else if (same(emailUi.sending)) emailUi.queued = null; // exactly this text is already on its way
+  else emailUi.queued = job;
+}
+
+async function runEmailSave(job) {
+  const shown = () => state.detailId === job.id;
+  emailUi.sending = job;
+  if (shown()) setResult(els.dEmailMsg, 'busy', 'Saving…');
+  try {
+    const updated = await api(`/api/leads/${job.id}`, {
+      method: 'PATCH', body: { email_subject: job.subject, email_body: job.body },
+    });
+    if (shown()) {
+      emailUi.savedSubject = job.subject;
+      emailUi.savedBody = job.body;
+      setResult(els.dEmailMsg, 'ok', 'Changes saved');
+    }
+    mergeLead(updated);
+  } catch (err) {
+    if (shown()) setResult(els.dEmailMsg, 'bad', `Changes not saved. ${err.message}`);
+    else reportError(new ApiError(`Email changes not saved. ${err.message}`, err.status));
+  } finally {
+    const next = emailUi.queued;
+    emailUi.queued = null;
+    emailUi.sending = null;
+    emailUi.saving = next ? runEmailSave(next) : null;
+  }
+}
+
+/** Waits for saves that are on their way; drops a queued one for a draft that is about to be replaced. */
+async function settleEmailSaves(id) {
+  if (emailUi.queued && emailUi.queued.id === id) emailUi.queued = null;
+  while (emailUi.saving) await emailUi.saving;
+}
+
+async function discardEmail() {
+  const id = state.detailId;
+  if (id === null) return;
+  await withBusy(els.dEmailConfirmYes, 'Discarding…', async () => {
+    try {
+      await settleEmailSaves(id); // a save on its way must not bring the draft back
+      await api(`/api/leads/${id}/email`, { method: 'DELETE' });
+      if (state.detailId === id) {
+        emailUi.confirm = null;
+        emailUi.savedSubject = null;
+        emailUi.savedBody = null;
+        setResult(els.dEmailMsg, '', '');
+      }
+      mergeLead({ id, email: null });
+      if (state.detailId === id) {
+        refreshEmailSection();
+        els.dEmailWrite.focus({ preventScroll: true });
+      }
+      toast('Draft discarded.');
+      if (route.view === 'leads' && route.filters.has_draft) loadLeads({ quiet: true });
+    } catch (err) {
+      if (state.detailId === id) {
+        emailUi.confirm = null;
+        emailUi.error = err.message;
+        refreshEmailSection();
+        els.dEmailDiscard.focus({ preventScroll: true });
+      } else {
+        reportError(err);
+      }
+    }
+  });
+}
+
+async function copyWithFeedback(btn, text, what) {
+  const ok = await copyText(text);
+  if (!ok) {
+    toast('Could not copy. Select the text and copy it yourself.', 'error');
+    return;
+  }
+  const label = btn.querySelector('span');
+  const use = btn.querySelector('use');
+  if (!btn.dataset.label) btn.dataset.label = label.textContent;
+  label.textContent = 'Copied';
+  use.setAttribute('href', '#i-check');
+  btn.classList.add('is-copied');
+  announce(`${what} copied`);
+  clearTimeout(btn._timer);
+  btn._timer = setTimeout(() => {
+    label.textContent = btn.dataset.label;
+    use.setAttribute('href', '#i-copy');
+    btn.classList.remove('is-copied');
+  }, 1800);
+}
+
 function drawerFocusables() {
   const selector = 'a[href], button:not([disabled]), select:not([disabled]), textarea:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
   return Array.from(els.drawerPanel.querySelectorAll(selector))
@@ -1587,7 +1968,9 @@ function onDrawerKeydown(event) {
   if (state.detailId === null) return;
   if (event.key === 'Escape') {
     event.preventDefault();
-    if (!els.dConfirm.hidden) {
+    if (emailUi.confirm) {
+      cancelEmailConfirm();
+    } else if (!els.dConfirm.hidden) {
       showDeleteConfirm(false);
       els.dDelete.focus();
     } else {
@@ -1682,7 +2065,12 @@ function populateSettings(s) {
   els.stGoogleKey.value = '';
   els.stClaudeKey.value = '';
   keyState(els.stGoogleState, $('st-google-help'), !!s.has_google_key, 'Optional. Gives fuller results than the free directory. ');
-  keyState(els.stClaudeState, $('st-claude-help'), !!s.has_claude_key, '');
+  keyState(els.stClaudeState, $('st-claude-help'), !!s.has_claude_key, 'Optional. Used to write a tailored email for each lead. ');
+  // A saved value that is not one of the two choices is kept as a third option.
+  const model = typeof s.claude_model === 'string' && s.claude_model.trim() ? s.claude_model.trim() : MODEL_OPTIONS[0][0];
+  const options = MODEL_OPTIONS.some(([value]) => value === model) ? MODEL_OPTIONS : [...MODEL_OPTIONS, [model, `Saved choice: ${model}`]];
+  fill(els.stModel, options.map(([value, label]) => h('option', { value }, label)));
+  els.stModel.value = model;
   els.stPagespeed.checked = !!s.use_pagespeed;
   settingsUi.populated = true;
   settingsUi.dirty = false;
@@ -1726,6 +2114,7 @@ function collectSettings() {
       return { name: get('name'), description: get('description'), url: get('url') };
     }).filter((p) => p.name || p.description || p.url),
     use_pagespeed: els.stPagespeed.checked,
+    claude_model: els.stModel.value,
   };
   const google = els.stGoogleKey.value.trim();
   const claude = els.stClaudeKey.value.trim();
@@ -1806,13 +2195,22 @@ function cacheElements() {
     // Leads
     statTotal: $('stat-total'), statEmail: $('stat-email'), statPhone: $('stat-phone'), statNosite: $('stat-nosite'), statHigh: $('stat-high'),
     filters: $('filters'), fQ: $('f-q'), fStatus: $('f-status'), fScore: $('f-score'), fWebsite: $('f-website'),
-    fSort: $('f-sort'), fEmail: $('f-email'), fClear: $('f-clear'), exportLink: $('export-link'),
+    fSort: $('f-sort'), fEmail: $('f-email'), fDraft: $('f-draft'), fClear: $('f-clear'), exportLink: $('export-link'),
     leadCount: $('lead-count'), searchChip: $('search-chip'), searchChipText: $('search-chip-text'), searchChipClear: $('search-chip-clear'),
     leadTableWrap: $('lead-table-wrap'), leadRows: $('lead-rows'), leadsEmpty: $('leads-empty'),
     // Drawer
     drawer: $('drawer'), drawerBackdrop: $('drawer-backdrop'), drawerPanel: $('drawer-panel'), drawerScroll: $('drawer-scroll'),
     dName: $('d-name'), dCategory: $('d-category'), dClose: $('d-close'), dScore: $('d-score'), dFacts: $('d-facts'),
     dContact: $('d-contact'), dStatus: $('d-status'), dNotes: $('d-notes'), dNotesSave: $('d-notes-save'), dNotesMsg: $('d-notes-msg'),
+    dEmailSection: $('d-email-section'), dEmailTitle: $('d-email-title'), dEmailBusy: $('d-email-busy'), dEmailError: $('d-email-error'),
+    dEmailLoading: $('d-email-loading'), dEmailEmpty: $('d-email-empty'), dEmailWrite: $('d-email-write'),
+    dEmailWriteLabel: $('d-email-write-label'), dEmailWriter: $('d-email-writer'), dEmailDraft: $('d-email-draft'),
+    dEmailNote: $('d-email-note'), dEmailTo: $('d-email-to'), dEmailSubject: $('d-email-subject'), dEmailBody: $('d-email-body'),
+    dEmailSave: $('d-email-save'), dEmailMsg: $('d-email-msg'), dEmailMeta: $('d-email-meta'), dEmailActions: $('d-email-actions'),
+    dEmailCopy: $('d-email-copy'), dEmailCopySubject: $('d-email-copy-subject'), dEmailGmail: $('d-email-gmail'),
+    dEmailRewrite: $('d-email-rewrite'), dEmailDiscard: $('d-email-discard'), dEmailConfirm: $('d-email-confirm'),
+    dEmailConfirmText: $('d-email-confirm-text'), dEmailConfirmYes: $('d-email-confirm-yes'),
+    dEmailConfirmYesLabel: $('d-email-confirm-yes-label'), dEmailConfirmNo: $('d-email-confirm-no'),
     dAudit: $('d-audit'), dIssuesSection: $('d-issues-section'), dIssues: $('d-issues'),
     dIdeasSection: $('d-ideas-section'), dIdeas: $('d-ideas'),
     dActions: $('d-actions'), dReaudit: $('d-reaudit'), dReauditLabel: $('d-reaudit-label'), dDelete: $('d-delete'),
@@ -1823,7 +2221,7 @@ function cacheElements() {
     stPortfolioUrl: $('st-portfolio-url'), stServices: $('st-services'), stAddService: $('st-add-service'),
     stPortfolio: $('st-portfolio'), stAddPortfolio: $('st-add-portfolio'),
     stGoogleKey: $('st-google-key'), stGoogleState: $('st-google-state'), stTestGoogle: $('st-test-google'), stTestResult: $('st-test-result'),
-    stClaudeKey: $('st-claude-key'), stClaudeState: $('st-claude-state'), stPagespeed: $('st-pagespeed'),
+    stClaudeKey: $('st-claude-key'), stClaudeState: $('st-claude-state'), stModel: $('st-model'), stPagespeed: $('st-pagespeed'),
     stSave: $('st-save'), stSaveMsg: $('st-save-msg'),
   });
 }
@@ -1860,7 +2258,7 @@ function wireEvents() {
     clearTimeout(filterTimer);
     filterTimer = setTimeout(applyFilterControls, 300);
   });
-  for (const control of [els.fStatus, els.fScore, els.fWebsite, els.fSort, els.fEmail]) {
+  for (const control of [els.fStatus, els.fScore, els.fWebsite, els.fSort, els.fEmail, els.fDraft]) {
     control.addEventListener('change', applyFilterControls);
   }
   els.fClear.addEventListener('click', clearFilters);
@@ -1872,6 +2270,17 @@ function wireEvents() {
     const opener = event.target.closest('[data-open]');
     if (opener) {
       openLead(Number(opener.dataset.open), opener);
+      return;
+    }
+    const writeBtn = event.target.closest('[data-email-write]');
+    if (writeBtn) {
+      writeEmail(Number(writeBtn.dataset.emailWrite), { openAfter: true });
+      return;
+    }
+    const viewBtn = event.target.closest('[data-email-view]');
+    if (viewBtn) {
+      emailJumpId = Number(viewBtn.dataset.emailView);
+      openLead(emailJumpId, viewBtn);
       return;
     }
     if (event.target.closest('a, button, select, input, label')) return;
@@ -1894,6 +2303,54 @@ function wireEvents() {
   els.dNotes.addEventListener('blur', () => saveNotes(false));
   els.dNotesSave.addEventListener('click', () => saveNotes(true));
   els.dReaudit.addEventListener('click', reauditLead);
+
+  // Drawer: email to send
+  els.dEmailWrite.addEventListener('click', () => {
+    if (state.detailId !== null && !isOff(els.dEmailWrite)) writeEmail(state.detailId);
+  });
+  for (const field of [els.dEmailSubject, els.dEmailBody]) {
+    field.addEventListener('input', () => {
+      setResult(els.dEmailMsg, '', '');
+      updateGmailLink();
+    });
+    field.addEventListener('blur', () => saveEmail(false));
+  }
+  els.dEmailSubject.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') saveEmail(true);
+  });
+  els.dEmailSave.addEventListener('click', () => {
+    if (!isOff(els.dEmailSave)) saveEmail(true);
+  });
+  els.dEmailCopy.addEventListener('click', () => {
+    if (!isOff(els.dEmailCopy)) copyWithFeedback(els.dEmailCopy, els.dEmailBody.value, 'Email');
+  });
+  els.dEmailCopySubject.addEventListener('click', () => {
+    if (!isOff(els.dEmailCopySubject)) copyWithFeedback(els.dEmailCopySubject, els.dEmailSubject.value, 'Subject');
+  });
+  els.dEmailGmail.addEventListener('click', (event) => {
+    if (isOff(els.dEmailGmail)) event.preventDefault();
+    else updateGmailLink(); // always the text as it is right now
+  });
+  els.dEmailRewrite.addEventListener('click', () => {
+    if (isOff(els.dEmailRewrite) || state.detailId === null) return;
+    const email = state.detail && state.detail.email;
+    if ((email && email.edited) || emailIsDirty()) askEmailConfirm('rewrite');
+    else writeEmail(state.detailId);
+  });
+  els.dEmailDiscard.addEventListener('click', () => {
+    if (!isOff(els.dEmailDiscard)) askEmailConfirm('discard');
+  });
+  els.dEmailConfirmNo.addEventListener('click', cancelEmailConfirm);
+  els.dEmailConfirmYes.addEventListener('click', () => {
+    if (isOff(els.dEmailConfirmYes) || state.detailId === null) return;
+    if (emailUi.confirm === 'discard') {
+      discardEmail();
+    } else {
+      emailUi.confirm = null;
+      els.dEmailTitle.focus({ preventScroll: true });
+      writeEmail(state.detailId);
+    }
+  });
   els.dDelete.addEventListener('click', () => {
     showDeleteConfirm(true);
     els.dConfirmNo.focus();

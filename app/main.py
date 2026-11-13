@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
+import re
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -17,6 +20,9 @@ from pydantic import BaseModel, Field
 
 from . import __version__, config, db
 from .audit import normalize_url
+from .emailer import EmailError, write_email
+from .render import RenderError, make_report_files
+from .report import build_context
 from .jobs import Jobs
 from .places import test_key
 
@@ -40,6 +46,8 @@ class ManualLeadIn(BaseModel):
 class LeadPatch(BaseModel):
     status: Optional[LeadStatus] = None
     notes: Optional[str] = Field(default=None, max_length=5000)
+    email_subject: Optional[str] = Field(default=None, max_length=300)
+    email_body: Optional[str] = Field(default=None, max_length=20000)
 
 
 class NoCacheStatic(StaticFiles):
@@ -64,6 +72,8 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         yield
         await jobs.stop()
         db.close()
+
+    report_lock = asyncio.Lock()  # one browser render at a time
 
     app = FastAPI(title="Client Finder Assistant", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.jobs = jobs
@@ -161,12 +171,14 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         has_website: Optional[bool],
         q: Optional[str],
         sort: str,
+        has_draft: Optional[bool] = None,
     ) -> dict[str, Any]:
         if status and status not in db.LEAD_STATUSES:
             raise HTTPException(400, "Unknown status filter.")
         return {
             "search_id": search_id, "status": status or None, "min_score": min_score,
             "has_email": has_email, "has_website": has_website, "q": (q or "").strip() or None, "sort": sort,
+            "has_draft": has_draft,
         }
 
     @app.get("/api/leads/export.csv")
@@ -178,13 +190,15 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         has_website: Optional[bool] = None,
         q: Optional[str] = None,
         sort: SortKey = "score",
+        has_draft: Optional[bool] = None,
     ) -> Response:
-        leads = db.list_leads(**lead_filters(search_id, status, min_score, has_email, has_website, q, sort))
+        leads = db.list_leads(**lead_filters(search_id, status, min_score, has_email, has_website, q, sort, has_draft), detail=True)
         buffer = io.StringIO()
         writer = csv.writer(buffer)
         writer.writerow([
             "Business", "Category", "Opportunity score", "Top issues", "Services that fit", "Phone", "Emails",
-            "Website", "Address", "Rating", "Reviews", "Status", "Notes", "Google Maps", "Added",
+            "Website", "Address", "Rating", "Reviews", "Status", "Notes", "Map link", "Added",
+            "Email subject", "Email body",
         ])
         for lead in leads:
             writer.writerow([_csv_safe(v) for v in [
@@ -193,6 +207,7 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
                 "; ".join(lead["emails"]), lead["website"] or "", lead["address"] or "",
                 lead["rating"] if lead["rating"] is not None else "", lead["reviews"] if lead["reviews"] is not None else "",
                 lead["status"], lead["notes"], lead["maps_url"] or "", lead["created_at"],
+                (lead.get("email") or {}).get("subject", ""), (lead.get("email") or {}).get("body", ""),
             ]])
         # BOM so Excel opens accented names correctly
         content = "﻿" + buffer.getvalue()
@@ -211,8 +226,9 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         has_website: Optional[bool] = None,
         q: Optional[str] = None,
         sort: SortKey = "score",
+        has_draft: Optional[bool] = None,
     ) -> list[dict[str, Any]]:
-        return db.list_leads(**lead_filters(search_id, status, min_score, has_email, has_website, q, sort))
+        return db.list_leads(**lead_filters(search_id, status, min_score, has_email, has_website, q, sort, has_draft))
 
     @app.post("/api/leads", status_code=201)
     async def add_lead(body: ManualLeadIn) -> dict[str, Any]:
@@ -234,8 +250,37 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     async def patch_lead(lead_id: int, body: LeadPatch) -> dict[str, Any]:
         if db.get_lead(lead_id, detail=False) is None:
             raise HTTPException(404, "That lead no longer exists.")
+        if body.email_subject is not None or body.email_body is not None:
+            db.edit_email(lead_id, body.email_subject, body.email_body)
         lead = db.update_lead(lead_id, status=body.status, notes=body.notes)
         return lead  # type: ignore[return-value]
+
+    @app.post("/api/leads/{lead_id}/email")
+    async def write_lead_email(lead_id: int) -> dict[str, Any]:
+        """Write (or rewrite) the outreach email for one lead and save it with the lead."""
+        lead = db.get_lead(lead_id)
+        if lead is None:
+            raise HTTPException(404, "That lead no longer exists.")
+        settings = config.public_settings()
+        try:
+            draft = await write_email(
+                jobs.client,  # type: ignore[arg-type]
+                lead,
+                settings,
+                api_key=config.get_secret("claude_api_key"),
+                model=settings["claude_model"],
+            )
+        except EmailError as exc:
+            raise HTTPException(getattr(exc, "status", 502), str(exc))
+        db.save_email(lead_id, draft["subject"], draft["body"], draft["source"], draft["note"])
+        return db.get_lead(lead_id)  # type: ignore[return-value]
+
+    @app.delete("/api/leads/{lead_id}/email", status_code=204)
+    async def discard_lead_email(lead_id: int) -> Response:
+        if db.get_lead(lead_id, detail=False) is None:
+            raise HTTPException(404, "That lead no longer exists.")
+        db.delete_email(lead_id)
+        return Response(status_code=204)
 
     @app.post("/api/leads/{lead_id}/reaudit")
     async def reaudit(lead_id: int) -> dict[str, Any]:
@@ -245,10 +290,75 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         jobs.queue_audit(lead_id)
         return db.get_lead(lead_id, detail=False)  # type: ignore[return-value]
 
+    # ------------------------------------------------- report and concept
+
+    def report_file(lead_id: int, name: str) -> Any:
+        lead = db.get_lead(lead_id, detail=False)
+        if lead is None:
+            raise HTTPException(404, "That lead no longer exists.")
+        path = config.report_dir(lead_id) / name
+        if not lead["has_report"] or not path.is_file():
+            raise HTTPException(404, "No report has been created for this lead yet.")
+        return lead, path
+
+    @app.post("/api/leads/{lead_id}/report")
+    async def create_report(lead_id: int) -> dict[str, Any]:
+        """Create (or recreate) the PDF report and homepage concept picture for one lead."""
+        lead = db.get_lead(lead_id)
+        if lead is None:
+            raise HTTPException(404, "That lead no longer exists.")
+        if lead["audit_status"] in ("pending", "running"):
+            raise HTTPException(409, "The website check for this business is still running. Wait for it to finish, then create the report.")
+        audit = lead.get("audit") or {}
+        if lead["audit_status"] in ("failed", "blocked") and not audit.get("issues"):
+            raise HTTPException(409, "This business's website could not be read, so there is nothing to report. Open the site yourself, or press Re-audit.")
+        if lead["audit_status"] != "done" and not audit.get("issues"):
+            raise HTTPException(409, "There are no findings for this business yet. Press Re-audit first.")
+        settings = config.public_settings()
+        if not (settings.get("your_name") or "").strip():
+            raise HTTPException(400, "Add your name in Settings first, so the report can say who prepared it.")
+        context = build_context(lead, settings)
+        async with report_lock:
+            try:
+                await asyncio.to_thread(make_report_files, context, config.report_dir(lead_id))
+            except RenderError as exc:
+                raise HTTPException(500, str(exc))
+        db.set_report(lead_id, True)
+        return db.get_lead(lead_id)  # type: ignore[return-value]
+
+    @app.get("/api/leads/{lead_id}/report.pdf")
+    async def get_report_pdf(lead_id: int, inline: bool = False) -> Response:
+        lead, path = report_file(lead_id, "report.pdf")
+        filename = f"{_file_name(lead['name'])} - website review.pdf"
+        return FileResponse(
+            path, media_type="application/pdf", filename=filename,
+            content_disposition_type="inline" if inline else "attachment",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/api/leads/{lead_id}/concept.png")
+    async def get_concept_png(lead_id: int, download: bool = False) -> Response:
+        lead, path = report_file(lead_id, "concept.png")
+        filename = f"{_file_name(lead['name'])} - homepage concept.png"
+        return FileResponse(
+            path, media_type="image/png", filename=filename,
+            content_disposition_type="attachment" if download else "inline",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.delete("/api/leads/{lead_id}/report", status_code=204)
+    async def delete_report(lead_id: int) -> Response:
+        if db.get_lead(lead_id, detail=False) is None:
+            raise HTTPException(404, "That lead no longer exists.")
+        shutil.rmtree(config.report_dir(lead_id), ignore_errors=True)
+        db.set_report(lead_id, False)
+        return Response(status_code=204)
+
     @app.delete("/api/leads/{lead_id}", status_code=204)
     async def delete_lead(lead_id: int) -> Response:
         if not db.delete_lead(lead_id):
             raise HTTPException(404, "That lead no longer exists.")
+        shutil.rmtree(config.report_dir(lead_id), ignore_errors=True)
         return Response(status_code=204)
 
     @app.get("/api/{rest:path}", include_in_schema=False)
@@ -275,6 +385,13 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         app.mount("/static", NoCacheStatic(directory=STATIC_DIR), name="static")
 
     return app
+
+
+def _file_name(name: str) -> str:
+    """A business name made safe to use as a Windows file name."""
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", name or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned[:80] or "Business"
 
 
 def _csv_safe(value: Any) -> Any:

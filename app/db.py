@@ -77,8 +77,28 @@ def connect() -> sqlite3.Connection:
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA journal_mode=WAL")
             _conn.executescript(SCHEMA)
+            _migrate(_conn)
             _conn.commit()
         return _conn
+
+
+# Columns added after the first release. Existing lead files gain them on start-up.
+ADDED_COLUMNS = {
+    "email_subject": "TEXT",
+    "email_body": "TEXT",
+    "email_source": "TEXT",
+    "email_note": "TEXT",
+    "email_generated_at": "TEXT",
+    "email_edited": "INTEGER NOT NULL DEFAULT 0",
+    "report_generated_at": "TEXT",
+}
+
+
+def _migrate(db: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in db.execute("PRAGMA table_info(leads)")}
+    for column, kind in ADDED_COLUMNS.items():
+        if column not in existing:
+            db.execute(f"ALTER TABLE leads ADD COLUMN {column} {kind}")
 
 
 def close() -> None:
@@ -195,11 +215,31 @@ def _lead_row(row: sqlite3.Row, detail: bool = False) -> dict[str, Any]:
         "top_issues": _loads(row["top_issues"], []),
         "services": _loads(row["services"], []),
         "notes": row["notes"],
+        "has_draft": bool(row["email_body"]),
+        "has_report": bool(row["report_generated_at"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
     if detail:
         lead["audit"] = _loads(row["audit"], None)
+        lead["email"] = None
+        if row["email_body"]:
+            lead["email"] = {
+                "to": lead["emails"][0] if lead["emails"] else None,
+                "subject": row["email_subject"] or "",
+                "body": row["email_body"],
+                "source": row["email_source"] or "manual",
+                "note": row["email_note"],
+                "edited": bool(row["email_edited"]),
+                "generated_at": row["email_generated_at"],
+            }
+        lead["report"] = None
+        if row["report_generated_at"]:
+            lead["report"] = {
+                "generated_at": row["report_generated_at"],
+                "pdf_url": f"/api/leads/{row['id']}/report.pdf",
+                "image_url": f"/api/leads/{row['id']}/concept.png",
+            }
     return lead
 
 
@@ -317,6 +357,67 @@ def update_lead(lead_id: int, status: str | None = None, notes: str | None = Non
     return get_lead(lead_id)
 
 
+def save_email(lead_id: int, subject: str, body: str, source: str, note: str | None) -> None:
+    """Store a freshly written draft, replacing any earlier one."""
+    with _lock:
+        db = connect()
+        now = now_iso()
+        db.execute(
+            "UPDATE leads SET email_subject=?, email_body=?, email_source=?, email_note=?, "
+            "email_generated_at=?, email_edited=0, updated_at=? WHERE id=?",
+            (subject[:300], body[:20000], source, note, now, now, lead_id),
+        )
+        db.commit()
+
+
+def edit_email(lead_id: int, subject: str | None, body: str | None) -> None:
+    """Save the user's own changes to the draft (creating one if there was none)."""
+    with _lock:
+        db = connect()
+        row = db.execute("SELECT email_subject, email_body, email_source FROM leads WHERE id = ?", (lead_id,)).fetchone()
+        if row is None:
+            return
+        new_subject = row["email_subject"] or "" if subject is None else subject[:300]
+        new_body = row["email_body"] or "" if body is None else body[:20000]
+        now = now_iso()
+        if not row["email_body"]:
+            if not new_body.strip():
+                # Nothing to keep yet: a subject alone is not a draft.
+                db.execute("UPDATE leads SET email_subject=?, updated_at=? WHERE id=?", (new_subject, now, lead_id))
+            else:
+                db.execute(
+                    "UPDATE leads SET email_subject=?, email_body=?, email_source='manual', email_note=NULL, "
+                    "email_generated_at=?, email_edited=0, updated_at=? WHERE id=?",
+                    (new_subject, new_body, now, now, lead_id),
+                )
+        elif new_subject != (row["email_subject"] or "") or new_body != row["email_body"]:
+            edited = 0 if row["email_source"] == "manual" else 1
+            db.execute(
+                "UPDATE leads SET email_subject=?, email_body=?, email_edited=?, updated_at=? WHERE id=?",
+                (new_subject, new_body, edited, now, lead_id),
+            )
+        db.commit()
+
+
+def set_report(lead_id: int, generated: bool) -> None:
+    with _lock:
+        db = connect()
+        now = now_iso()
+        db.execute("UPDATE leads SET report_generated_at=?, updated_at=? WHERE id=?", (now if generated else None, now, lead_id))
+        db.commit()
+
+
+def delete_email(lead_id: int) -> None:
+    with _lock:
+        db = connect()
+        db.execute(
+            "UPDATE leads SET email_subject=NULL, email_body=NULL, email_source=NULL, email_note=NULL, "
+            "email_generated_at=NULL, email_edited=0, updated_at=? WHERE id=?",
+            (now_iso(), lead_id),
+        )
+        db.commit()
+
+
 def delete_lead(lead_id: int) -> bool:
     with _lock:
         db = connect()
@@ -357,6 +458,8 @@ def list_leads(
     q: str | None = None,
     sort: str = "score",
     limit: int = 2000,
+    has_draft: bool | None = None,
+    detail: bool = False,
 ) -> list[dict[str, Any]]:
     where: list[str] = []
     args: list[Any] = []
@@ -373,6 +476,8 @@ def list_leads(
         args.append(min_score)
     if has_email:
         where.append("l.emails != '[]'")
+    if has_draft:
+        where.append("l.email_body IS NOT NULL AND l.email_body != ''")
     if has_website is True:
         where.append("l.website IS NOT NULL AND l.website != '' AND l.audit_status != 'no_website'")
     elif has_website is False:
@@ -388,7 +493,7 @@ def list_leads(
     args.append(limit)
     with _lock:
         rows = connect().execute(sql, args).fetchall()
-    return [_lead_row(r) for r in rows]
+    return [_lead_row(r, detail) for r in rows]
 
 
 def stats() -> dict[str, Any]:

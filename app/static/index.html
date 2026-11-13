@@ -185,10 +185,16 @@
             <option value="rating">Rating</option>
           </select>
         </div>
-        <label class="check filters-check" for="f-email">
-          <input type="checkbox" id="f-email">
-          <span>Has email</span>
-        </label>
+        <div class="filters-checks">
+          <label class="check filters-check" for="f-email">
+            <input type="checkbox" id="f-email">
+            <span>Has email address</span>
+          </label>
+          <label class="check filters-check" for="f-draft">
+            <input type="checkbox" id="f-draft">
+            <span>Has email draft</span>
+          </label>
+        </div>
         <button type="button" class="btn btn--quiet" id="f-clear" hidden>Clear filters</button>
       </form>
 
@@ -210,6 +216,7 @@
             <tr>
               <th scope="col" class="col-score">Score</th>
               <th scope="col" class="col-biz">Business</th>
+              <th scope="col" class="col-email">Email</th>
               <th scope="col" class="col-found">Website check</th>
               <th scope="col" class="col-contact">Contact</th>
               <th scope="col" class="col-rating">Rating</th>
@@ -308,7 +315,15 @@
                 <span class="keystate" id="st-claude-state"></span>
               </div>
               <input id="st-claude-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="st-claude-help">
-              <p class="help" id="st-claude-help">Leave this empty to keep the saved key.</p>
+              <p class="help" id="st-claude-help">Optional. Used to write a tailored email for each lead. Leave this empty to keep the saved key.</p>
+            </div>
+            <div class="field">
+              <label for="st-model">Email writing</label>
+              <select id="st-model" class="select--medium" aria-describedby="st-model-help">
+                <option value="claude-sonnet-5-5">Best quality</option>
+                <option value="claude-haiku-5-5">Fastest and cheapest</option>
+              </select>
+              <p class="help" id="st-model-help">Used when a Claude key is saved. Without a key, emails use standard wording.</p>
             </div>
           </div>
         </section>
@@ -356,6 +371,77 @@
       <section class="d-section" aria-labelledby="d-contact-title">
         <h3 id="d-contact-title">Contact</h3>
         <div id="d-contact"></div>
+      </section>
+
+      <section class="d-section" id="d-email-section" aria-labelledby="d-email-title">
+        <h3 id="d-email-title" tabindex="-1">Email to send</h3>
+        <p class="email-busy" id="d-email-busy" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Writing the email… this can take up to a minute.</span>
+        </p>
+        <p class="form-error" id="d-email-error" role="alert" hidden></p>
+        <p class="none" id="d-email-loading" hidden>Loading the email…</p>
+
+        <div class="email-empty" id="d-email-empty" hidden>
+          <p class="audit-note">Get a complete email to this business, written from what the website check found. You send it yourself. Client Finder never sends anything.</p>
+          <div class="inline-action">
+            <button type="button" class="btn btn--primary" id="d-email-write" data-fk="email-write">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mail"/></svg>
+              <span id="d-email-write-label">Write email</span>
+            </button>
+          </div>
+          <p class="help" id="d-email-writer"></p>
+        </div>
+
+        <div class="email-draft" id="d-email-draft" hidden>
+          <div class="notice notice--inline" id="d-email-note" hidden></div>
+          <div class="email-to" id="d-email-to"></div>
+          <div class="field">
+            <label for="d-email-subject">Subject</label>
+            <input type="text" id="d-email-subject" autocomplete="off" maxlength="300" data-fk="email-subject">
+          </div>
+          <div class="field">
+            <label for="d-email-body">Email</label>
+            <textarea id="d-email-body" class="email-body" rows="14" maxlength="20000" data-fk="email-body"></textarea>
+            <div class="inline-action">
+              <button type="button" class="btn btn--small" id="d-email-save" data-fk="email-save">Save changes</button>
+              <p class="inline-result" id="d-email-msg" role="status"></p>
+            </div>
+          </div>
+          <p class="email-meta" id="d-email-meta"></p>
+
+          <div class="email-actions" id="d-email-actions">
+            <button type="button" class="btn btn--primary btn--copy" id="d-email-copy" data-fk="email-copy">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-copy"/></svg>
+              <span>Copy email</span>
+            </button>
+            <button type="button" class="btn btn--copy" id="d-email-copy-subject" data-fk="email-copy-subject">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-copy"/></svg>
+              <span>Copy subject</span>
+            </button>
+            <a class="btn" id="d-email-gmail" href="https://mail.google.com/mail/?view=cm&amp;fs=1" target="_blank" rel="noopener noreferrer" data-fk="email-gmail">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>
+              <span>Open in Gmail</span>
+              <span class="sr-only"> (opens in a new tab)</span>
+            </a>
+            <button type="button" class="btn" id="d-email-rewrite" data-fk="email-rewrite">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>
+              <span>Write again</span>
+            </button>
+            <button type="button" class="btn btn--danger-quiet" id="d-email-discard" data-fk="email-discard">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg>
+              <span>Discard draft</span>
+            </button>
+          </div>
+          <div class="email-confirm" id="d-email-confirm" role="group" aria-labelledby="d-email-confirm-text" hidden>
+            <p id="d-email-confirm-text"></p>
+            <div class="drawer-confirm-buttons">
+              <button type="button" class="btn btn--danger" id="d-email-confirm-yes" data-fk="email-confirm-yes"><span id="d-email-confirm-yes-label"></span></button>
+              <button type="button" class="btn" id="d-email-confirm-no" data-fk="email-confirm-no"></button>
+            </div>
+          </div>
+          <p class="help">Read it through before sending. Check that each point is true for this business.</p>
+        </div>
       </section>
 
       <section class="d-section" aria-labelledby="d-pipeline-title">

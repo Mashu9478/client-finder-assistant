@@ -63,6 +63,8 @@ def site_handler(request: httpx.Request) -> httpx.Response:
 
     if host == "places.googleapis.com":
         return places_handler(request)
+    if host == "api.anthropic.com":
+        return claude_handler(request)
     if host == "nominatim.openstreetmap.org":
         return nominatim_handler(request)
     if host in ("overpass-api.de", "overpass.private.coffee", "maps.mail.ru"):
@@ -116,6 +118,40 @@ def site_handler(request: httpx.Request) -> httpx.Response:
 
 PLACES_STATE = {"calls": [], "mode": "ok"}
 OSM_STATE = {"nominatim": [], "overpass": [], "mode": "ok"}
+CLAUDE_STATE = {"calls": [], "mode": "ok"}
+
+CLAUDE_EMAIL = """Subject: Joe's Plumbing on phones
+
+Hello Joe's Plumbing team,
+
+I'm Test Person from Studio. I had a look at old.example and it is hard to use on a phone.
+
+- The pages show as a tiny desktop layout on mobile.
+- There is no secure connection, so browsers warn visitors.
+
+A modern rebuild would fix both. You can see our work at https://studio.example.
+
+Reply here or message me on WhatsApp at +10000000000.
+
+Best regards,
+Test Person
+Studio"""
+
+
+def claude_handler(request: httpx.Request) -> httpx.Response:
+    import json
+    CLAUDE_STATE["calls"].append({"body": json.loads(request.content), "headers": dict(request.headers)})
+    mode = CLAUDE_STATE["mode"]
+    if mode == "bad_key":
+        return httpx.Response(401, json={"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
+    if mode == "no_credit":
+        return httpx.Response(400, json={"type": "error", "error": {"type": "invalid_request_error", "message": "Your credit balance is too low to access the Anthropic API."}})
+    if mode == "garbled":
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "Sure, here you go!"}]})
+    return httpx.Response(200, json={"id": "msg_1", "type": "message", "role": "assistant", "content": [
+        {"type": "thinking", "thinking": "Subject: this is private reasoning, not the email", "signature": "x"},
+        {"type": "text", "text": "```\n" + CLAUDE_EMAIL + "\n```"},
+    ], "stop_reason": "end_turn"})
 
 OSM_ELEMENTS = [
     {"type": "node", "id": 1, "lat": 29.7, "lon": -95.4, "tags": {"name": "No Contact Dental", "amenity": "dentist"}},
@@ -190,6 +226,8 @@ def transport():
     OSM_STATE["nominatim"].clear()
     OSM_STATE["overpass"].clear()
     OSM_STATE["mode"] = "ok"
+    CLAUDE_STATE["calls"].clear()
+    CLAUDE_STATE["mode"] = "ok"
     return httpx.MockTransport(site_handler)
 
 

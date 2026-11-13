@@ -2,3 +2,4 @@ fastapi>=0.110
 uvicorn>=0.27
 httpx>=0.27
 beautifulsoup4>=4.12
+jinja2>=3.1

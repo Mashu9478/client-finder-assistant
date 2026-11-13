@@ -17,6 +17,11 @@ DATA_DIR = Path(os.environ.get("CFA_DATA_DIR", ROOT / "data"))
 SETTINGS_PATH = DATA_DIR / "settings.json"
 DB_PATH = DATA_DIR / "leads.db"
 
+
+def report_dir(lead_id: int) -> Path:
+    """Folder holding one lead's report.pdf and concept.png."""
+    return DATA_DIR / "reports" / f"lead-{int(lead_id)}"
+
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CFA_PORT", "8765"))
 
@@ -37,6 +42,7 @@ PUBLIC_DEFAULTS: dict[str, Any] = {
     "services": DEFAULT_SERVICES,
     "portfolio": [],
     "use_pagespeed": False,
+    "claude_model": "claude-sonnet-5-5",
 }
 
 # Fields the UI may write but never read back.
@@ -71,6 +77,14 @@ def _write_raw(data: dict[str, Any]) -> None:
 
 def _clean_str(value: Any, limit: int = 500) -> str:
     return str(value or "").strip()[:limit]
+
+
+def _clean_model(value: Any) -> str:
+    """A model name is letters, digits, dots and hyphens; anything else falls back to the default."""
+    text = str(value or "").strip()
+    if text and len(text) <= 80 and all(c.isalnum() or c in "-._" for c in text):
+        return text
+    return str(PUBLIC_DEFAULTS["claude_model"])
 
 
 def _clean_services(value: Any) -> list[str]:
@@ -108,7 +122,9 @@ def public_settings() -> dict[str, Any]:
     out["use_pagespeed"] = bool(out["use_pagespeed"])
     out["has_google_key"] = bool(get_secret("google_api_key"))
     out["has_claude_key"] = bool(get_secret("claude_api_key"))
+    out["claude_model"] = _clean_model(out["claude_model"])
     out["search_source"] = "google" if out["has_google_key"] else "openstreetmap"
+    out["email_writer"] = "claude" if out["has_claude_key"] else "template"
     return out
 
 
@@ -124,6 +140,8 @@ def update_settings(changes: dict[str, Any]) -> dict[str, Any]:
             raw["portfolio"] = _clean_portfolio(changes["portfolio"])
         if "use_pagespeed" in changes:
             raw["use_pagespeed"] = bool(changes["use_pagespeed"])
+        if "claude_model" in changes:
+            raw["claude_model"] = _clean_model(changes["claude_model"])
         for key in SECRET_KEYS:
             value = changes.get(key)
             # Empty or missing means "keep what is saved".
