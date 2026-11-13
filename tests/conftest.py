@@ -65,7 +65,7 @@ def site_handler(request: httpx.Request) -> httpx.Response:
         return places_handler(request)
     if host == "nominatim.openstreetmap.org":
         return nominatim_handler(request)
-    if host in ("overpass-api.de", "overpass.private.coffee"):
+    if host in ("overpass-api.de", "overpass.private.coffee", "maps.mail.ru"):
         return overpass_handler(request)
 
     if host == "good.example":
@@ -150,6 +150,10 @@ def overpass_handler(request: httpx.Request) -> httpx.Response:
     mode = OSM_STATE["mode"]
     if mode == "busy" or (mode == "main_busy" and request.url.host == "overpass-api.de"):
         return httpx.Response(429, text="rate limited")
+    if mode == "refused":
+        return httpx.Response(406, text="Not Acceptable")
+    if mode == "heavy":
+        return httpx.Response(200, json={"elements": [], "remark": "runtime error: Query timed out in \"query\" at line 3 after 46 seconds."})
     if mode == "empty":
         return httpx.Response(200, json={"elements": []})
     return httpx.Response(200, json={"elements": OSM_ELEMENTS})

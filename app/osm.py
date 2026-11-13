@@ -20,14 +20,18 @@ from typing import Any
 
 import httpx
 
-from .audit import USER_AGENT
+from . import __version__
 from .places import PlacesError
+
+# The public servers turn away requests that do not say plainly which program is asking.
+USER_AGENT = f"ClientFinderAssistant/{__version__} (+https://github.com/Mashu9478/client-finder-assistant)"
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 # The main public server first, then an independent mirror if it is busy.
 OVERPASS_URLS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 )
 
 MAX_RESULTS = 60
@@ -253,15 +257,17 @@ def build_overpass_query(query: str, bbox: tuple[float, float, float, float], li
     lines: list[str] = []
     for key, value in filters:
         lines.append(f'  nwr["{key}"="{value}"]["name"]{box};')
-    if phrase:
-        # A tag whose value is exactly what was typed, e.g. "locksmith" -> craft=locksmith
+    if not filters and phrase:
+        # Unknown kind of business. Try it as a tag value ("locksmith" -> craft=locksmith) ...
         value = re.sub(r"[\s\-]+", "_", phrase)
-        lines.append(f'  nwr[~"{KEY_REGEX}"~"^{value}$"]["name"]{box};')
-        # Businesses with the phrase in their name
+        for key in BUSINESS_KEYS:
+            lines.append(f'  nwr["{key}"="{value}"]["name"]{box};')
+        # ... and as words in a business's name.
         if len(phrase) >= 4:
-            lines.append(f'  nwr["name"~"{phrase}",i][~"{KEY_REGEX}"~"."]{box};')
+            for key in ("shop", "amenity", "office", "craft"):
+                lines.append(f'  nwr["{key}"]["name"~"{phrase}",i]{box};')
     body = "\n".join(lines)
-    return f"[out:json][timeout:40];\n(\n{body}\n);\nout tags center {limit};"
+    return f"[out:json][timeout:45];\n(\n{body}\n);\nout tags center {limit};"
 
 
 async def find_area(client: httpx.AsyncClient, location: str) -> tuple[float, float, float, float]:
@@ -358,32 +364,45 @@ def parse_element(element: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def _run_overpass(client: httpx.AsyncClient, query: str) -> dict[str, Any]:
-    busy = False
+    """Try each public server in turn. Raises PlacesError naming what each one answered."""
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    problems: list[str] = []
+    too_heavy = False
     for url in OVERPASS_URLS:
+        host = url.split("/")[2]
         try:
-            resp = await client.post(url, data={"data": query}, headers={"User-Agent": USER_AGENT}, timeout=60.0)
-        except httpx.HTTPError:
-            busy = True
+            resp = await client.post(url, data={"data": query}, headers=headers, timeout=75.0)
+        except httpx.TimeoutException:
+            problems.append(f"{host}: no answer in time")
             continue
-        if resp.status_code == 200:
-            try:
-                payload = resp.json()
-            except ValueError:
-                busy = True
-                continue
-            if isinstance(payload, dict):
-                return payload
-            busy = True
-            continue
-        if resp.status_code in (429, 502, 503, 504):
-            busy = True
+        except httpx.HTTPError as exc:
+            problems.append(f"{host}: could not connect ({type(exc).__name__})")
             continue
         if resp.status_code == 400:
             raise PlacesError("The free search could not understand that kind of business. Try a simpler word, like \"dentist\" or \"plumber\".")
-        busy = True
-    if busy:
-        raise PlacesError("The free business directory is busy right now. Wait a minute and try again.")
-    raise PlacesError("The free business directory did not answer. Try again in a minute.")
+        if resp.status_code != 200:
+            problems.append(f"{host}: HTTP {resp.status_code}")
+            continue
+        try:
+            payload = resp.json()
+        except ValueError:
+            problems.append(f"{host}: unreadable answer")
+            continue
+        if not isinstance(payload, dict):
+            problems.append(f"{host}: unreadable answer")
+            continue
+        remark = str(payload.get("remark") or "")
+        if remark and not payload.get("elements"):
+            # The server gave up part-way (usually out of time or memory).
+            too_heavy = True
+            problems.append(f"{host}: {remark[:80]}")
+            continue
+        return payload
+
+    details = "; ".join(problems)
+    if too_heavy:
+        raise PlacesError(f"That search was too heavy for the free directory. Try a smaller place, such as one district of the city. (Details: {details})")
+    raise PlacesError(f"The free business directory is busy or could not be reached. Wait a minute and try again. (Details: {details})")
 
 
 async def search_osm(

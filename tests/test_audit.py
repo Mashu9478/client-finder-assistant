@@ -167,7 +167,9 @@ def test_search_words_map_to_directory_tags():
     assert tags_for("real estate agents")[0] == [("office", "estate_agent")]
     # Whatever is typed cannot break out of the query
     hostile = build_overpass_query('x"];node(1);out;//', (1, 2, 3, 4), 10)
-    assert '"];' not in hostile.replace('"](1.00000', "").replace('"."](', "") and "node(1)" not in hostile
+    assert "node(1)" not in hostile and 'x"]' not in hostile
+    assert 'nwr["craft"="x_node_1_out"]["name"](1.00000,2.00000,3.00000,4.00000);' in hostile
+    assert 'nwr["shop"]["name"~"x node 1 out",i](1.00000,2.00000,3.00000,4.00000);' in hostile
     assert tags_for("Makeup Businesses") == ([("shop", "cosmetics"), ("shop", "beauty")], "makeup")
     assert tags_for("law firms")[0] == [("office", "lawyer")]             # filler words do not hide a known phrase
     assert tags_for("shops")[1] == "shop"                                  # nothing left? keep what was typed

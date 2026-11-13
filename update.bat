@@ -3,31 +3,18 @@ setlocal
 cd /d "%~dp0"
 title Update Client Finder
 
-where git >nul 2>nul
-if errorlevel 1 (
-  echo Git is not installed, so this file cannot fetch updates.
-  echo Either install Git from https://git-scm.com/download/win and run this again,
-  echo or download the latest ZIP from GitHub and copy your "data" folder into it.
-  pause
-  exit /b 1
-)
-if not exist ".git" (
-  echo This folder was not downloaded with Git, so it cannot update itself.
-  echo Download the latest ZIP from GitHub and copy your "data" folder into it.
-  pause
-  exit /b 1
-)
-
-echo Getting the latest version...
-git pull --ff-only
+echo Close the Client Finder app and its black window before updating.
+pause
+echo.
+echo Downloading the latest version...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $zip = Join-Path $env:TEMP 'cfa-update.zip'; $dir = Join-Path $env:TEMP 'cfa-update'; if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }; Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/Mashu9478/client-finder-assistant/archive/refs/heads/main.zip' -OutFile $zip; Expand-Archive -Path $zip -DestinationPath $dir -Force; $src = Join-Path $dir 'client-finder-assistant-main'; Copy-Item -Path (Join-Path $src '*') -Destination (Get-Location).Path -Recurse -Force -Exclude 'update.bat','data'; Remove-Item $zip -Force; Remove-Item $dir -Recurse -Force"
 if errorlevel 1 goto fail
 
 if exist ".venv\Scripts\python.exe" (
   ".venv\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check -r requirements.txt
-  if errorlevel 1 goto fail
 )
 echo.
-echo Updated. Close the app if it is open, then run start.bat.
+echo Updated. Your leads and settings were not touched. Run start.bat to open the app.
 pause
 exit /b 0
 

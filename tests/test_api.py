@@ -69,7 +69,8 @@ def test_free_search_without_a_key(client):
     overpass = OSM_STATE["overpass"][0]
     assert overpass["host"] == "overpass-api.de"
     assert 'nwr["amenity"="dentist"]["name"](29.52000,-95.91000,30.11000,-95.01000);' in overpass["query"]
-    assert "ClientFinderAssistant" in overpass["headers"]["user-agent"]
+    assert overpass["headers"]["user-agent"].startswith("ClientFinderAssistant/")  # plain, not browser-like
+    assert "~" not in overpass["query"]  # known kinds use fast exact lookups only
 
     leads = client.get("/api/leads", params={"search_id": search["id"], "sort": "newest"}).json()
     by_name = {l["name"]: l for l in leads}
@@ -99,7 +100,10 @@ def test_free_search_without_a_key(client):
 @pytest.mark.parametrize("location,mode,phrase", [
     ("Nowhereville", "ok", "Could not find a place"),
     ("Texas", "ok", "too large an area"),
-    ("Houston, Texas", "busy", "busy right now"),
+    ("Houston, Texas", "busy", "busy or could not be reached"),
+    ("Houston, Texas", "busy", "overpass-api.de: HTTP 429; overpass.private.coffee: HTTP 429; maps.mail.ru: HTTP 429"),
+    ("Houston, Texas", "refused", "overpass-api.de: HTTP 406"),
+    ("Houston, Texas", "heavy", "too heavy for the free directory"),
     ("Houston, Texas", "empty", "lists no"),
 ])
 def test_free_search_problems_are_explained(client, location, mode, phrase):

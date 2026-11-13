@@ -31,8 +31,6 @@ boards (stage 4).
    In the installer, tick **Add python.exe to PATH**.
 2. **Get the app.** On the GitHub page press **Code → Download ZIP** and
    unzip it, for example to `Documents\client-finder-assistant`.
-   (If you use Git, clone the repo instead; `update.bat` can then fetch new
-   versions for you.)
 3. **Start it.** Double-click `start.bat`. The first run takes a minute or two
    while it sets itself up. A black window stays open, and the app opens in
    its own window. Close the black window to stop the app.
@@ -134,9 +132,14 @@ database, and prefer the contact details published on the business's own site.
 
 ## Updating
 
-- **Downloaded as ZIP:** download the new ZIP, unzip it, and copy your `data`
-  folder across.
-- **Cloned with Git:** double-click `update.bat`.
+1. Close the app and its black window.
+2. Double-click `update.bat`. It downloads the newest version from GitHub and
+   replaces the app's files. Your `data` folder (leads, settings, keys) is
+   left alone.
+3. Double-click `start.bat`.
+
+If `update.bat` fails, download the ZIP from GitHub again and copy your `data`
+folder into the new folder.
 
 ## If something goes wrong
 
