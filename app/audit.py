@@ -676,7 +676,7 @@ def build_ideas(issues: list[dict[str, str]], lead: dict[str, Any] | None = None
     reviews = lead.get("reviews") or 0
     if rating and rating >= 4.3 and reviews >= 30:
         ideas.append(make_idea("website", "Show off their reviews", f"They have {reviews} Google reviews averaging {rating}. Feature them on the site to win trust faster."))
-    elif reviews < 20 and "no_website" not in codes:
+    elif lead.get("reviews") is not None and reviews < 20 and not codes & {"no_website", "social_only", "site_down", "site_error"}:
         ideas.append(make_idea("ai", "Automatic review requests", "Send customers a review request after each job to build up their Google rating."))
     return ideas
 
@@ -790,7 +790,7 @@ async def _audit(client: httpx.AsyncClient, raw_url: str, lead: dict[str, Any] |
         if home_fetch.error_kind in ("timeout", "connect"):
             issues.append(make_issue(
                 "site_down", "high", "Website is not loading",
-                "The address Google lists for this business did not load. Customers who click it get an error.",
+                "The listed address did not load from this computer. Open it yourself to check: if it fails for you too, customers who click it are getting an error.",
             ))
         return result_unreadable("failed", home_fetch.error, issues)
 
