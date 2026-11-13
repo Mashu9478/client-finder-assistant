@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Client Finder</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b7a5b'/%3E%3Cpath d='M8 21v-4M13 21v-8M18 21V9' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3Ccircle cx='23.5' cy='20.5' r='3' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+
+<!-- Icon sprite: local, inline, no network. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8M11 6H7a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.5 4h3l1.5 4-2 1.5a11 11 0 0 0 5.5 5.5l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A16 16 0 0 1 4.5 6.2 2 2 0 0 1 6.5 4Z"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7.5 8 6 8-6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s6.5-5.6 6.5-10.5a6.5 6.5 0 0 0-13 0C5.5 15.4 12 21 12 21Z"/><circle cx="12" cy="10.5" r="2.3"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.3 3.7 5.2 3.7 8.5s-1.2 6.2-3.7 8.5c-2.5-2.3-3.7-5.2-3.7-8.5S9.5 5.8 12 3.5Z"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="m9 5-5.5 2v12L9 17l6 2 5.5-2V5L15 7 9 5ZM9 5v12M15 7v12"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.2h-4.2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V5h5v2M6.5 7l.8 11a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9L17.5 7M10 11v5M14 11v5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.5 3.5 19h17L12 4.5ZM12 10.5v4M12 16.8v.2"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path class="solid" d="m12 3.8 2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8L12 3.8Z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4.5v10M7.5 11l4.5 4.5 4.5-4.5M5 19.5h14"/></symbol>
+</svg>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar" id="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="#/find" aria-label="Client Finder, go to Find">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect width="32" height="32" rx="7" fill="#0b7a5b"/>
+        <path d="M8 21v-4M13 21v-8M18 21V9" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>
+        <circle cx="23.5" cy="20.5" r="3" fill="none" stroke="#fff" stroke-width="2.2"/>
+        <path d="m25.7 22.7 2 2" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-name">Client Finder</span>
+    </a>
+    <nav class="mainnav" aria-label="Main">
+      <a href="#/find" data-nav="find">Find</a>
+      <a href="#/leads" data-nav="leads">Leads</a>
+      <a href="#/settings" data-nav="settings">Settings</a>
+    </nav>
+  </div>
+</header>
+
+<div class="banner" id="offline-banner" role="alert" hidden>
+  <div class="wrap banner-inner">
+    <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-alert"/></svg>
+    <p>Client Finder is not answering. Check that the app is still running on this computer.</p>
+    <button type="button" class="btn btn--small" id="offline-retry">Try again</button>
+  </div>
+</div>
+
+<main id="main" tabindex="-1">
+
+  <!-- ============================== Find ============================== -->
+  <section id="view-find" class="view" aria-labelledby="find-title" hidden>
+    <div class="deck">
+      <div class="wrap">
+        <h1 id="find-title" tabindex="-1">Find leads</h1>
+        <p class="deck-lede">Name a kind of business and a place. Client Finder lists the businesses, checks each website for problems you can fix, and scores how much there is to sell.</p>
+
+        <div class="notice" id="key-notice" hidden>
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-alert"/></svg>
+          <p><strong>A Google Places key is needed before you can search.</strong> Add it once in Settings. It stays on this computer.</p>
+          <a class="btn btn--small" href="#/settings">Open settings</a>
+        </div>
+
+        <form id="search-form" class="searchbar" novalidate aria-describedby="search-error">
+          <div class="sb-field sb-field--grow">
+            <label for="s-query">What kind of business?</label>
+            <input id="s-query" name="query" type="text" autocomplete="off" spellcheck="false" placeholder="dentists" required>
+          </div>
+          <div class="sb-field sb-field--grow">
+            <label for="s-location">Where?</label>
+            <input id="s-location" name="location" type="text" autocomplete="off" placeholder="Houston, Texas">
+          </div>
+          <div class="sb-field sb-field--narrow">
+            <label for="s-max">How many?</label>
+            <select id="s-max" name="max_results">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="40">40</option>
+              <option value="60">60</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn--primary sb-submit" id="s-submit">Find leads</button>
+        </form>
+        <p class="form-error form-error--dark" id="search-error" role="alert" hidden></p>
+      </div>
+    </div>
+
+    <div class="wrap find-grid">
+      <section class="find-recent" aria-labelledby="recent-title">
+        <h2 id="recent-title">Recent searches</h2>
+        <ul class="search-list" id="search-list"></ul>
+        <div class="empty" id="search-empty" hidden></div>
+      </section>
+
+      <section class="panel find-manual" aria-labelledby="manual-title">
+        <h2 id="manual-title">Audit one website</h2>
+        <p class="panel-lede">Already have a business in mind? Paste its website and it gets the same check and score.</p>
+        <form id="manual-form" novalidate>
+          <div class="field">
+            <label for="m-website">Website address</label>
+            <input id="m-website" name="website" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="example.com" required>
+          </div>
+          <div class="field">
+            <label for="m-name">Business name <span class="optional">(optional)</span></label>
+            <input id="m-name" name="name" type="text" autocomplete="off">
+          </div>
+          <p class="form-error" id="manual-error" role="alert" hidden></p>
+          <button type="submit" class="btn" id="m-submit">Audit website</button>
+        </form>
+      </section>
+    </div>
+  </section>
+
+  <!-- ============================== Leads ============================== -->
+  <section id="view-leads" class="view" aria-labelledby="leads-title" hidden>
+    <div class="wrap">
+      <div class="page-head">
+        <h1 id="leads-title" tabindex="-1">Leads</h1>
+        <a class="btn" id="export-link" href="/api/leads/export.csv" download>
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>
+          <span id="export-label">Export CSV</span>
+        </a>
+      </div>
+
+      <dl class="stats" id="stats" aria-label="Lead totals">
+        <div class="stat"><dt>Total leads</dt><dd id="stat-total">–</dd></div>
+        <div class="stat"><dt>With email</dt><dd id="stat-email">–</dd></div>
+        <div class="stat"><dt>With phone</dt><dd id="stat-phone">–</dd></div>
+        <div class="stat"><dt>No website</dt><dd id="stat-nosite">–</dd></div>
+        <div class="stat stat--accent"><dt>High opportunity</dt><dd id="stat-high">–</dd></div>
+      </dl>
+
+      <form class="filters" id="filters" role="search" aria-label="Filter leads">
+        <div class="field field--search">
+          <label for="f-q">Search</label>
+          <input id="f-q" type="search" autocomplete="off" spellcheck="false" placeholder="Name, address or website">
+        </div>
+        <div class="field">
+          <label for="f-status">Status</label>
+          <select id="f-status">
+            <option value="">Any status</option>
+            <option value="new">New</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="contacted">Contacted</option>
+            <option value="replied">Replied</option>
+            <option value="won">Won</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-score">Minimum score</label>
+          <select id="f-score">
+            <option value="">Any</option>
+            <option value="40">40+</option>
+            <option value="60">60+</option>
+            <option value="80">80+</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-website">Website</label>
+          <select id="f-website">
+            <option value="">Any</option>
+            <option value="true">Has website</option>
+            <option value="false">No website</option>
+          </select>
+        </div>
+        <div class="field field--sort">
+          <label for="f-sort">Sort by</label>
+          <select id="f-sort">
+            <option value="score">Best opportunity</option>
+            <option value="newest">Newest</option>
+            <option value="name">Name</option>
+            <option value="rating">Rating</option>
+          </select>
+        </div>
+        <label class="check filters-check" for="f-email">
+          <input type="checkbox" id="f-email">
+          <span>Has email</span>
+        </label>
+        <button type="button" class="btn btn--quiet" id="f-clear" hidden>Clear filters</button>
+      </form>
+
+      <div class="result-bar">
+        <p id="lead-count" role="status"></p>
+        <span class="chip" id="search-chip" hidden>
+          <span id="search-chip-text"></span>
+          <button type="button" id="search-chip-clear" class="chip-clear">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg>
+            <span>Show all leads</span>
+          </button>
+        </span>
+      </div>
+
+      <div class="table-wrap" id="lead-table-wrap" hidden>
+        <table class="leads" id="lead-table">
+          <caption class="sr-only">Leads. Choose a business name to open its details.</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="col-score">Score</th>
+              <th scope="col" class="col-biz">Business</th>
+              <th scope="col" class="col-found">Website check</th>
+              <th scope="col" class="col-contact">Contact</th>
+              <th scope="col" class="col-rating">Rating</th>
+              <th scope="col" class="col-status">Status</th>
+            </tr>
+          </thead>
+          <tbody id="lead-rows"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="leads-empty" hidden></div>
+    </div>
+  </section>
+
+  <!-- ============================== Settings ============================== -->
+  <section id="view-settings" class="view" aria-labelledby="settings-title" hidden>
+    <div class="wrap wrap--narrow">
+      <div class="page-head">
+        <h1 id="settings-title" tabindex="-1">Settings</h1>
+      </div>
+
+      <div class="empty" id="settings-loading" hidden></div>
+
+      <form id="settings-form" novalidate hidden>
+        <section class="set-section" aria-labelledby="set-details-title">
+          <div class="set-intro">
+            <h2 id="set-details-title">Your details</h2>
+            <p>Who you are and what you sell. Client Finder uses this to match leads to your services.</p>
+          </div>
+          <div class="set-fields">
+            <div class="field-row">
+              <div class="field">
+                <label for="st-your-name">Your name</label>
+                <input id="st-your-name" type="text" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="st-business-name">Business name</label>
+                <input id="st-business-name" type="text" autocomplete="off">
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="st-email">Email</label>
+                <input id="st-email" type="email" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="field">
+                <label for="st-whatsapp">WhatsApp number</label>
+                <input id="st-whatsapp" type="tel" autocomplete="off">
+              </div>
+            </div>
+            <div class="field">
+              <label for="st-portfolio-url">Portfolio link</label>
+              <input id="st-portfolio-url" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://">
+            </div>
+
+            <div class="field" role="group" aria-labelledby="st-services-label">
+              <span class="label" id="st-services-label">Services you offer</span>
+              <ul class="edit-list" id="st-services"></ul>
+              <button type="button" class="btn btn--small" id="st-add-service">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>
+                <span>Add a service</span>
+              </button>
+            </div>
+
+            <div class="field" role="group" aria-labelledby="st-portfolio-label">
+              <span class="label" id="st-portfolio-label">Past work to show clients</span>
+              <ul class="edit-list edit-list--cards" id="st-portfolio"></ul>
+              <button type="button" class="btn btn--small" id="st-add-portfolio">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>
+                <span>Add a project</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="set-section" aria-labelledby="set-keys-title">
+          <div class="set-intro">
+            <h2 id="set-keys-title">Keys</h2>
+            <p>Keys are stored only on this computer. They are never shown again after you save them.</p>
+          </div>
+          <div class="set-fields">
+            <div class="field">
+              <div class="label-row">
+                <label for="st-google-key">Google Places API key</label>
+                <span class="keystate" id="st-google-state"></span>
+              </div>
+              <input id="st-google-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="st-google-help">
+              <p class="help" id="st-google-help">Needed to find businesses. Leave this empty to keep the saved key.</p>
+              <div class="inline-action">
+                <button type="button" class="btn btn--small" id="st-test-google">Test Google key</button>
+                <p class="inline-result" id="st-test-result" role="status"></p>
+              </div>
+            </div>
+            <div class="field">
+              <div class="label-row">
+                <label for="st-claude-key">Claude API key</label>
+                <span class="keystate" id="st-claude-state"></span>
+              </div>
+              <input id="st-claude-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="st-claude-help">
+              <p class="help" id="st-claude-help">Leave this empty to keep the saved key.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="set-section" aria-labelledby="set-audit-title">
+          <div class="set-intro">
+            <h2 id="set-audit-title">Website checks</h2>
+          </div>
+          <div class="set-fields">
+            <label class="check check--block" for="st-pagespeed">
+              <input type="checkbox" id="st-pagespeed" aria-describedby="st-pagespeed-help">
+              <span>Also get Google's mobile speed score for each site</span>
+            </label>
+            <p class="help help--indent" id="st-pagespeed-help">Slower. Needs the PageSpeed Insights API turned on for the same Google key.</p>
+          </div>
+        </section>
+
+        <div class="savebar">
+          <button type="submit" class="btn btn--primary" id="st-save">Save settings</button>
+          <p class="savebar-msg" id="st-save-msg" role="status"></p>
+        </div>
+      </form>
+    </div>
+  </section>
+</main>
+
+<!-- ============================== Lead detail drawer ============================== -->
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  <aside class="drawer-panel" id="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="d-name" tabindex="-1">
+    <button type="button" class="icon-btn drawer-close" id="d-close" aria-label="Close lead details" data-fk="close">
+      <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg>
+    </button>
+
+    <div class="drawer-scroll" id="drawer-scroll">
+    <header class="drawer-head">
+      <h2 id="d-name"></h2>
+      <p id="d-category"></p>
+    </header>
+
+    <div class="drawer-body">
+      <div class="d-score" id="d-score"></div>
+      <div class="d-facts" id="d-facts"></div>
+
+      <section class="d-section" aria-labelledby="d-contact-title">
+        <h3 id="d-contact-title">Contact</h3>
+        <div id="d-contact"></div>
+      </section>
+
+      <section class="d-section" aria-labelledby="d-pipeline-title">
+        <h3 id="d-pipeline-title">Your pipeline</h3>
+        <div class="field field--inline">
+          <label for="d-status">Status</label>
+          <select id="d-status" class="status-select" data-fk="status">
+            <option value="new">New</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="contacted">Contacted</option>
+            <option value="replied">Replied</option>
+            <option value="won">Won</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="d-notes">Notes</label>
+          <textarea id="d-notes" rows="4" data-fk="notes" placeholder="Who you spoke to, what they said, what to do next"></textarea>
+          <div class="inline-action">
+            <button type="button" class="btn btn--small" id="d-notes-save" data-fk="notes-save">Save notes</button>
+            <p class="inline-result" id="d-notes-msg" role="status"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="d-section" aria-labelledby="d-audit-title">
+        <h3 id="d-audit-title">Website check</h3>
+        <div id="d-audit"></div>
+      </section>
+
+      <section class="d-section" id="d-issues-section" aria-labelledby="d-issues-title" hidden>
+        <h3 id="d-issues-title">Problems found</h3>
+        <div id="d-issues"></div>
+      </section>
+
+      <section class="d-section" id="d-ideas-section" aria-labelledby="d-ideas-title" hidden>
+        <h3 id="d-ideas-title">Upgrade ideas</h3>
+        <ul class="idea-list" id="d-ideas"></ul>
+      </section>
+    </div>
+    </div>
+
+    <footer class="drawer-foot">
+      <div class="drawer-actions" id="d-actions">
+        <button type="button" class="btn" id="d-reaudit" data-fk="reaudit">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>
+          <span id="d-reaudit-label">Re-audit website</span>
+        </button>
+        <button type="button" class="btn btn--danger-quiet" id="d-delete" data-fk="delete">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg>
+          <span>Delete lead</span>
+        </button>
+      </div>
+      <div class="drawer-confirm" id="d-confirm" role="group" aria-labelledby="d-confirm-text" hidden>
+        <p id="d-confirm-text"><strong>Delete this lead?</strong> Its notes and website check are removed too. This cannot be undone.</p>
+        <div class="drawer-confirm-buttons">
+          <button type="button" class="btn btn--danger" id="d-confirm-yes" data-fk="confirm-yes">Yes, delete lead</button>
+          <button type="button" class="btn" id="d-confirm-no" data-fk="confirm-no">Keep lead</button>
+        </div>
+      </div>
+    </footer>
+  </aside>
+</div>
+
+<div class="toasts" id="toasts" role="region" aria-label="Messages"></div>
+<p class="sr-only" id="live" role="status" aria-live="polite"></p>
+
+<noscript>
+  <p class="noscript">Client Finder needs JavaScript turned on in this browser.</p>
+</noscript>
+
+</body>
+</html>
