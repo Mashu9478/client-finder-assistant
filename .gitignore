@@ -1,0 +1,9 @@
+# Everything personal stays on your computer: settings, API keys and your leads.
+data/*
+!data/.gitkeep
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
