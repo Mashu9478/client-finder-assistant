@@ -29,6 +29,14 @@ your lead list:
 - Edit it if you like, then press **Copy email** or **Open in Gmail** and send
   it yourself. The app never sends anything.
 
+**Report and concept picture** give you something to attach:
+
+- Press **Create report** on a lead. The app makes a PDF review of that
+  business's website (problems grouped by area, why each matters, the
+  recommended fix, what you would do, and who you are) and a picture of a
+  modern homepage concept for that business.
+- Download both and attach them to your email.
+
 Still to come: sending approved emails from inside the app, voice control, and
 a finder for paid projects on job boards.
 
@@ -132,6 +140,27 @@ Before you send:
   some (including Canada and much of Europe) restrict unsolicited business
   email further. Check the rules for the countries you write to.
 
+## Reports and concept pictures
+
+The PDF groups findings into areas: security and trust, speed, mobile
+experience, design and technology, Google visibility, turning visitors into
+customers, measurement, and upkeep. It also lists what the site already does
+well, which makes the rest more believable.
+
+The concept picture is a mock-up of a modern homepage that shows the upgrades
+the report recommends, such as online booking, an enquiry form, tap-to-call
+and chat. It uses only the business's name, type, phone, address and, when it
+is good, its rating. The wording and layout are samples. It is not a redesign
+of their actual pages, and it is labelled "Concept only" so nobody mistakes it
+for one.
+
+Making the PDF and picture uses Microsoft Edge or Google Chrome, working
+invisibly on your PC. Nothing is uploaded. The files are kept in
+`data/reports/`.
+
+If the email was written before the report existed, press **Write again** so
+the email mentions the attachments.
+
 ## What the audit does and does not do
 
 The audit loads a site's homepage, up to two contact or about pages, and a
@@ -186,6 +215,7 @@ folder into the new folder.
 | "Google rejected the API key" | Copy the key again in full into Settings. |
 | "Places API (New) is not switched on" | Enable **Places API (New)** in Google Cloud, wait a minute, retry. |
 | Many leads say "Could not read site" | Check your internet connection, then press **Re-audit** on a lead. |
+| "Making the PDF needs Microsoft Edge or Google Chrome" | Install either browser, then press Create report again. |
 | The app window does not open | Open <http://127.0.0.1:8765> in Chrome or Edge while the black window is running. |
 
 ## For developers
@@ -200,6 +230,9 @@ app/osm.py       free search: Nominatim + Overpass (OpenStreetMap)
 app/audit.py     website audit, issues, ideas, score
 app/contacts.py  public email / phone / social extraction
 app/emailer.py   outreach email per lead (Claude API or built-in template)
+app/report.py    report and concept data built from an audit
+app/render.py    HTML to PDF and PNG through headless Edge or Chrome
+app/report_templates/  the report and concept layouts (Jinja2)
 app/jobs.py      background searches and audits
 app/db.py        SQLite storage
 app/config.py    local settings

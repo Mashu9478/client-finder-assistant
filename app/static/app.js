@@ -929,8 +929,16 @@ function statusSelect(lead, id) {
   }, STATUSES.map((s) => h('option', { value: s }, STATUS_LABELS[s])));
 }
 
-/** The Email column: write a draft, see the saved one, or wait for the audit. */
+/** The Email column: the email button, with a small note under it about the report. */
 function emailCell(lead) {
+  const td = emailButtonCell(lead);
+  if (reporting.has(lead.id)) td.append(h('span', { class: 'cell-tag' }, 'Creating report…'));
+  else if (lead.has_report) td.append(h('span', { class: 'cell-tag' }, icon('check'), 'Report ready'));
+  return td;
+}
+
+/** Write a draft, see the saved one, or wait for the audit. */
+function emailButtonCell(lead) {
   const name = leadName(lead);
   const id = String(lead.id);
   if (writing.has(lead.id)) {
@@ -1031,8 +1039,8 @@ function renderLeads() {
   const f = route.filters;
   const hasRows = state.leadsLoaded && leads.length > 0;
 
-  // A row is also redrawn when its "Writing…" state changes.
-  if (hasRows) syncList(els.leadRows, leads, (l) => l.id, leadRow, (l) => JSON.stringify(l) + (writing.has(l.id) ? '|writing' : ''));
+  // A row is also redrawn when its "Writing…" or "Creating report…" state changes.
+  if (hasRows) syncList(els.leadRows, leads, (l) => l.id, leadRow, (l) => JSON.stringify(l) + (writing.has(l.id) ? '|writing' : '') + (reporting.has(l.id) ? '|reporting' : ''));
   else els.leadRows.replaceChildren();
   els.leadTableWrap.hidden = !hasRows;
   els.fClear.hidden = !hasNarrowingFilters(f);
@@ -1173,14 +1181,16 @@ async function exportCsv(event) {
 /** Applies a lead the server just sent back to both the table and the drawer. */
 function mergeLead(updated) {
   if (!updated || updated.id === undefined) return;
-  const { audit, email, ...listFields } = updated;
+  const { audit, email, report, ...listFields } = updated;
   if (email !== undefined) listFields.has_draft = !!email; // keeps the table's Email column in step
+  if (report !== undefined) listFields.has_report = !!report;
   const index = state.leads.findIndex((l) => l.id === updated.id);
   if (index !== -1) state.leads[index] = { ...state.leads[index], ...listFields };
   if (state.detailId === updated.id) {
     state.detail = { ...(state.detail || {}), ...listFields };
     if (audit !== undefined) state.detail.audit = audit;
     if (email !== undefined) state.detail.email = email;
+    if (report !== undefined) state.detail.report = report;
     renderDrawer();
     // A refresh that was already on its way would bring back the old values.
     if (detailInFlight > 0) loadDetail(updated.id, { quiet: true });
@@ -1267,6 +1277,8 @@ function showDrawer(id) {
   emailUi.error = '';
   emailUi.confirm = null;
   setResult(els.dEmailMsg, '', '');
+  reportUi.error = '';
+  reportUi.confirm = false;
 
   els.drawer.hidden = false;
   document.body.classList.add('drawer-open');
@@ -1501,6 +1513,7 @@ function renderDrawer() {
       els.dNotes.disabled = true;
       els.dNotes.value = '';
       renderEmailSection();
+      renderReportSection();
       renderDrawerActions();
       return;
     }
@@ -1535,6 +1548,7 @@ function renderDrawer() {
     }
 
     renderEmailSection();
+    renderReportSection();
     fill(els.dAudit, drawerAudit(lead));
 
     const issueGroups = drawerIssues(lead);
@@ -1693,6 +1707,18 @@ function gmailUrl() {
   return `https://mail.google.com/mail/?${parts.join('&')}`;
 }
 
+/** Reminders in the email section that depend on the report in the section below. */
+function updateEmailHints() {
+  const lead = state.detail;
+  const email = lead && lead.email;
+  const report = lead && lead.report;
+  const both = !!(email && report);
+  els.dEmailAttach.hidden = !both;
+  const written = both ? parseDate(email.generated_at) : null;
+  const created = both ? parseDate(report.generated_at) : null;
+  els.dEmailStale.hidden = !(written && created && created > written && !/attached/i.test(els.dEmailBody.value));
+}
+
 function updateGmailLink() {
   els.dEmailGmail.href = gmailUrl();
 }
@@ -1777,6 +1803,8 @@ function renderEmailSection() {
   for (const el of [els.dEmailSave, els.dEmailCopy, els.dEmailCopySubject, els.dEmailGmail, els.dEmailRewrite, els.dEmailDiscard]) {
     setOff(el, busy);
   }
+
+  updateEmailHints();
 
   const confirm = busy ? null : emailUi.confirm;
   els.dEmailConfirm.hidden = !confirm;
@@ -1958,6 +1986,194 @@ async function copyWithFeedback(btn, text, what) {
   }, 1800);
 }
 
+/* ------------------------------------------------------------------ */
+/* Report and concept picture (a PDF and a PNG the server makes)       */
+/* ------------------------------------------------------------------ */
+
+const reporting = new Set(); // ids of leads whose report is being created right now
+const reportUi = { error: '', confirm: false, made: 0 };
+
+function refreshReportSection() {
+  if (state.detailId !== null) keepDrawerFocus(renderReportSection);
+}
+
+/**
+ * A file address from the server, kept only if it points back at this app.
+ * Returns a URL object to add queries to, or null.
+ */
+function ownFileUrl(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  try {
+    const url = new URL(raw.trim(), location.origin);
+    const web = url.protocol === 'http:' || url.protocol === 'https:';
+    return web && url.origin === location.origin && url.pathname.startsWith('/api/') ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function withQuery(url, key, value) {
+  const copy = new URL(url.href);
+  copy.searchParams.set(key, value);
+  return copy.pathname + copy.search;
+}
+
+/** A link with no address is not a link: it cannot be followed or reached with Tab. */
+function setFileLink(link, href) {
+  if (href) link.setAttribute('href', href);
+  else link.removeAttribute('href');
+}
+
+function renderReportSection() {
+  const id = state.detailId;
+  if (id === null) return;
+  const lead = state.detail;
+  const report = lead ? lead.report : undefined;
+  const busy = reporting.has(id);
+  const has = !!report;
+  const known = report !== undefined || (!!lead && (lead.audit !== undefined || lead.has_report === false));
+
+  els.dReportBusy.hidden = !busy;
+  showFormError(els.dReportError, busy ? '' : reportUi.error);
+  els.dReportLoading.hidden = known || busy || state.detailFailed;
+
+  const showEmpty = !has && (known || busy);
+  els.dReportEmpty.hidden = !showEmpty;
+  if (showEmpty) {
+    const auditing = isAuditing(lead);
+    setOff(els.dReportCreate, busy || auditing);
+    els.dReportCreateLabel.textContent = busy ? 'Creating…' : 'Create report';
+    els.dReportHint.hidden = !auditing || busy;
+  }
+
+  els.dReportReady.hidden = !has;
+  if (!has) {
+    reportUi.confirm = false;
+    if (els.dReportImg.dataset.src) {
+      delete els.dReportImg.dataset.src;
+      els.dReportImg.removeAttribute('src');
+    }
+    return;
+  }
+
+  const pdf = ownFileUrl(report.pdf_url);
+  const image = ownFileUrl(report.image_url);
+  // The files are remade in place, so the picture's address changes with its creation time.
+  const version = `${report.generated_at || ''}${reportUi.made ? `-${reportUi.made}` : ''}`;
+  const shown = image ? withQuery(image, 'v', version) : '';
+
+  els.dReportImg.alt = `Concept homepage for ${leadName(lead)}`;
+  if (shown && els.dReportImg.dataset.src !== shown) {
+    els.dReportImg.dataset.src = shown;
+    els.dReportImg.src = shown; // the load / error handlers show the picture or a message
+  } else if (!shown) {
+    delete els.dReportImg.dataset.src;
+    els.dReportImg.removeAttribute('src');
+    els.dReportImg.hidden = true;
+    els.dReportImgMissing.hidden = false;
+    els.dReportFrame.classList.add('is-plain');
+  }
+  els.dReportFrame.classList.toggle('is-busy', busy);
+
+  setFileLink(els.dReportFull, shown);
+  setFileLink(els.dReportPng, image ? withQuery(image, 'download', 'true') : '');
+  setFileLink(els.dReportPdf, pdf ? pdf.pathname + pdf.search : '');
+  setFileLink(els.dReportOpen, pdf ? withQuery(pdf, 'inline', 'true') : '');
+  els.dReportFull.hidden = !shown;
+
+  const when = fmtWhen(report.generated_at);
+  fillIfChanged(els.dReportMeta, when, () => (when ? [h('span', null, `Created ${when.replace(/^(Today|Yesterday)/, (word) => word.toLowerCase())}`)] : []));
+
+  setOff(els.dReportPdf, busy || !pdf);
+  setOff(els.dReportOpen, busy || !pdf);
+  setOff(els.dReportPng, busy || !image);
+  setOff(els.dReportAgain, busy);
+  setOff(els.dReportRemove, busy);
+
+  const confirm = !busy && reportUi.confirm;
+  els.dReportConfirm.hidden = !confirm;
+  els.dReportActions.hidden = confirm;
+}
+
+function showReportSection() {
+  const delta = els.dReportSection.getBoundingClientRect().top - els.drawerScroll.getBoundingClientRect().top;
+  els.drawerScroll.scrollTop += delta - 4;
+}
+
+function cancelReportConfirm() {
+  reportUi.confirm = false;
+  renderReportSection();
+  els.dReportRemove.focus();
+}
+
+/** Asks the server to create (or recreate) the PDF and the picture. Takes up to half a minute. */
+async function createReport(id) {
+  if (reporting.has(id)) return;
+  const shown = () => state.detailId === id;
+  const lead = shown() ? state.detail : state.leads.find((l) => l.id === id);
+  const name = lead ? leadName(lead) : 'this lead';
+
+  reporting.add(id);
+  if (shown()) {
+    reportUi.error = '';
+    reportUi.confirm = false;
+  }
+  if (route.view === 'leads') renderLeads();
+  refreshReportSection();
+  if (shown()) showReportSection(); // bring the "Creating…" line into view
+  announce(`Creating the report and picture for ${name}. This takes up to half a minute.`);
+
+  try {
+    const updated = await api(`/api/leads/${id}/report`, { method: 'POST' });
+    reporting.delete(id);
+    reportUi.made += 1;
+    mergeLead(updated);
+    if (shown()) {
+      refreshReportSection();
+      showReportSection();
+      els.dReportTitle.focus({ preventScroll: true });
+      announce('The report and picture are ready.');
+    } else {
+      toast(`The report for ${name} is ready.`);
+    }
+  } catch (err) {
+    reporting.delete(id);
+    if (route.view === 'leads') renderLeads();
+    if (shown()) {
+      reportUi.error = err.message;
+      refreshReportSection();
+    } else {
+      reportError(err);
+    }
+  }
+}
+
+async function removeReport() {
+  const id = state.detailId;
+  if (id === null) return;
+  await withBusy(els.dReportConfirmYes, 'Removing…', async () => {
+    try {
+      await api(`/api/leads/${id}/report`, { method: 'DELETE' });
+      if (state.detailId === id) reportUi.confirm = false;
+      mergeLead({ id, report: null });
+      if (state.detailId === id) {
+        refreshReportSection();
+        els.dReportCreate.focus({ preventScroll: true });
+      }
+      toast('Report removed.');
+    } catch (err) {
+      if (state.detailId === id) {
+        reportUi.confirm = false;
+        reportUi.error = err.message;
+        refreshReportSection();
+        els.dReportRemove.focus({ preventScroll: true });
+      } else {
+        reportError(err);
+      }
+    }
+  });
+}
+
 function drawerFocusables() {
   const selector = 'a[href], button:not([disabled]), select:not([disabled]), textarea:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
   return Array.from(els.drawerPanel.querySelectorAll(selector))
@@ -1970,6 +2186,8 @@ function onDrawerKeydown(event) {
     event.preventDefault();
     if (emailUi.confirm) {
       cancelEmailConfirm();
+    } else if (reportUi.confirm) {
+      cancelReportConfirm();
     } else if (!els.dConfirm.hidden) {
       showDeleteConfirm(false);
       els.dDelete.focus();
@@ -2211,6 +2429,15 @@ function cacheElements() {
     dEmailRewrite: $('d-email-rewrite'), dEmailDiscard: $('d-email-discard'), dEmailConfirm: $('d-email-confirm'),
     dEmailConfirmText: $('d-email-confirm-text'), dEmailConfirmYes: $('d-email-confirm-yes'),
     dEmailConfirmYesLabel: $('d-email-confirm-yes-label'), dEmailConfirmNo: $('d-email-confirm-no'),
+    dEmailAttach: $('d-email-attach'), dEmailStale: $('d-email-stale'),
+    dReportSection: $('d-report-section'), dReportTitle: $('d-report-title'), dReportBusy: $('d-report-busy'),
+    dReportError: $('d-report-error'), dReportLoading: $('d-report-loading'), dReportEmpty: $('d-report-empty'),
+    dReportCreate: $('d-report-create'), dReportCreateLabel: $('d-report-create-label'), dReportHint: $('d-report-hint'),
+    dReportReady: $('d-report-ready'), dReportFrame: $('d-report-frame'), dReportImg: $('d-report-img'),
+    dReportImgMissing: $('d-report-img-missing'), dReportFull: $('d-report-full'), dReportMeta: $('d-report-meta'),
+    dReportActions: $('d-report-actions'), dReportPdf: $('d-report-pdf'), dReportOpen: $('d-report-open'),
+    dReportPng: $('d-report-png'), dReportAgain: $('d-report-again'), dReportRemove: $('d-report-remove'),
+    dReportConfirm: $('d-report-confirm'), dReportConfirmYes: $('d-report-confirm-yes'), dReportConfirmNo: $('d-report-confirm-no'),
     dAudit: $('d-audit'), dIssuesSection: $('d-issues-section'), dIssues: $('d-issues'),
     dIdeasSection: $('d-ideas-section'), dIdeas: $('d-ideas'),
     dActions: $('d-actions'), dReaudit: $('d-reaudit'), dReauditLabel: $('d-reaudit-label'), dDelete: $('d-delete'),
@@ -2312,6 +2539,7 @@ function wireEvents() {
     field.addEventListener('input', () => {
       setResult(els.dEmailMsg, '', '');
       updateGmailLink();
+      updateEmailHints();
     });
     field.addEventListener('blur', () => saveEmail(false));
   }
@@ -2341,6 +2569,49 @@ function wireEvents() {
     if (!isOff(els.dEmailDiscard)) askEmailConfirm('discard');
   });
   els.dEmailConfirmNo.addEventListener('click', cancelEmailConfirm);
+
+  // Drawer: report and concept picture
+  for (const btn of [els.dReportCreate, els.dReportAgain]) {
+    btn.addEventListener('click', () => {
+      if (state.detailId !== null && !isOff(btn)) createReport(state.detailId);
+    });
+  }
+  // Downloads and "open" are plain links, so they work in an app window. A link
+  // is only followed while the report is still there.
+  for (const link of [els.dReportPdf, els.dReportOpen, els.dReportPng, els.dReportFull]) {
+    link.addEventListener('click', (event) => {
+      const report = state.detail && state.detail.report;
+      if (isOff(link) || !report) {
+        event.preventDefault();
+        if (!isOff(link) && !report) {
+          reportUi.error = 'This report is no longer there. Press Create report to make a new one.';
+          refreshReportSection();
+        }
+      }
+    });
+  }
+  els.dReportImg.addEventListener('load', () => {
+    els.dReportImg.hidden = false;
+    els.dReportImgMissing.hidden = true;
+    // A short picture needs no "more below" fade.
+    els.dReportFrame.classList.toggle('is-plain', els.dReportImg.offsetHeight <= els.dReportFrame.clientHeight);
+  });
+  els.dReportImg.addEventListener('error', () => {
+    els.dReportImg.hidden = true;
+    els.dReportImgMissing.hidden = false;
+    els.dReportFrame.classList.add('is-plain');
+  });
+  els.dReportRemove.addEventListener('click', () => {
+    if (isOff(els.dReportRemove)) return;
+    reportUi.confirm = true;
+    reportUi.error = '';
+    renderReportSection();
+    els.dReportConfirmNo.focus();
+  });
+  els.dReportConfirmNo.addEventListener('click', cancelReportConfirm);
+  els.dReportConfirmYes.addEventListener('click', () => {
+    if (!isOff(els.dReportConfirmYes)) removeReport();
+  });
   els.dEmailConfirmYes.addEventListener('click', () => {
     if (isOff(els.dEmailConfirmYes) || state.detailId === null) return;
     if (emailUi.confirm === 'discard') {

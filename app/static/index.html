@@ -440,7 +440,75 @@
               <button type="button" class="btn" id="d-email-confirm-no" data-fk="email-confirm-no"></button>
             </div>
           </div>
+          <p class="help" id="d-email-attach" hidden>Remember to attach the PDF report and the picture in Gmail. They are in the section below.</p>
+          <p class="help" id="d-email-stale" hidden>This email was written before the report. Press Write again so it mentions the attachments.</p>
           <p class="help">Read it through before sending. Check that each point is true for this business.</p>
+        </div>
+      </section>
+
+      <section class="d-section" id="d-report-section" aria-labelledby="d-report-title">
+        <h3 id="d-report-title" tabindex="-1">Report and concept picture</h3>
+        <p class="email-busy" id="d-report-busy" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Creating the report and picture… this takes up to half a minute.</span>
+        </p>
+        <p class="form-error" id="d-report-error" role="alert" hidden></p>
+        <p class="none" id="d-report-loading" hidden>Loading the report…</p>
+
+        <div class="email-empty" id="d-report-empty" hidden>
+          <p class="audit-note">Create a PDF review of this website to send to the business, with a picture of how their homepage could look.</p>
+          <div class="inline-action">
+            <button type="button" class="btn btn--primary" id="d-report-create" data-fk="report-create">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>
+              <span id="d-report-create-label">Create report</span>
+            </button>
+          </div>
+          <p class="help" id="d-report-hint" hidden>You can create the report once the website check has finished.</p>
+        </div>
+
+        <div class="email-draft" id="d-report-ready" hidden>
+          <figure class="concept">
+            <div class="concept-frame" id="d-report-frame">
+              <img id="d-report-img" alt="" width="1440" height="1800">
+              <p class="none concept-missing" id="d-report-img-missing" hidden>The picture could not be shown. Press Create again to make a new one.</p>
+            </div>
+            <figcaption>
+              <a id="d-report-full" target="_blank" rel="noopener noreferrer" data-fk="report-full">View full picture<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-external"/></svg><span class="sr-only"> (opens in a new tab)</span></a>
+            </figcaption>
+          </figure>
+          <p class="email-meta" id="d-report-meta"></p>
+
+          <div class="email-actions" id="d-report-actions">
+            <a class="btn btn--primary" id="d-report-pdf" download data-fk="report-pdf">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>
+              <span>Download PDF report</span>
+            </a>
+            <a class="btn" id="d-report-open" target="_blank" rel="noopener noreferrer" data-fk="report-open">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-external"/></svg>
+              <span>Open PDF</span>
+              <span class="sr-only"> (opens in a new tab)</span>
+            </a>
+            <a class="btn" id="d-report-png" download data-fk="report-png">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>
+              <span>Download picture</span>
+            </a>
+            <button type="button" class="btn" id="d-report-again" data-fk="report-again">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>
+              <span>Create again</span>
+            </button>
+            <button type="button" class="btn btn--danger-quiet" id="d-report-remove" data-fk="report-remove">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg>
+              <span>Remove</span>
+            </button>
+          </div>
+          <div class="email-confirm" id="d-report-confirm" role="group" aria-labelledby="d-report-confirm-text" hidden>
+            <p id="d-report-confirm-text"><strong>Remove this report?</strong> The PDF and the picture are deleted. You can create them again at any time.</p>
+            <div class="drawer-confirm-buttons">
+              <button type="button" class="btn btn--danger" id="d-report-confirm-yes" data-fk="report-confirm-yes"><span>Yes, remove report</span></button>
+              <button type="button" class="btn" id="d-report-confirm-no" data-fk="report-confirm-no">Keep report</button>
+            </div>
+          </div>
+          <p class="help">The picture is a concept with sample wording, not a finished design.</p>
         </div>
       </section>
 

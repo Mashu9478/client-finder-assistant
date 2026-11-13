@@ -125,6 +125,27 @@ RECOMMENDATION = {
     "Automatic review requests": ("Automatic review requests", "A review request sent after each job, to build up your Google rating."),
 }
 
+# The audit's notes are written for the freelancer. Where one would read oddly to the
+# business owner, the report uses this (title, what) instead.
+OWNER_WORDING = {
+    "no_website_listed": (
+        "No website found",
+        "We could not find a website listed for the business. If there is one and we missed it, please disregard this point.",
+    ),
+    "site_down": (
+        "Website was not loading",
+        "The website address listed for the business did not load when we checked. If it is failing for customers too, anyone who clicks it sees an error.",
+    ),
+    "old_markup": (
+        "Built with outdated techniques",
+        "The site is built with techniques from well over a decade ago, which shows in how it looks and how it loads.",
+    ),
+    "site_builder": (
+        None,
+        "The site is made with a do-it-yourself website builder, which limits how fast it loads and how well it can rank.",
+    ),
+}
+
 SERVICE_LABEL = {"website": "Website", "app": "App", "ai": "AI", "data": "Data"}
 SEVERITY_LABEL = {"high": "High priority", "medium": "Worth fixing", "low": "Nice to have"}
 
@@ -203,11 +224,12 @@ def build_context(lead: dict[str, Any], settings: dict[str, Any]) -> dict[str, A
     by_area: dict[str, list[dict[str, Any]]] = {}
     for issue in issues:
         code = issue.get("code") or ""
+        owner_title, owner_what = OWNER_WORDING.get(code, (None, None))
         by_area.setdefault(AREA_OF.get(code, "upkeep"), []).append({
             "severity": issue.get("severity") or "low",
             "severity_label": SEVERITY_LABEL.get(issue.get("severity") or "low", "Nice to have"),
-            "title": issue.get("title"),
-            "what": issue.get("detail") or "",
+            "title": owner_title or issue.get("title"),
+            "what": owner_what or issue.get("detail") or "",
             "fix": FIX.get(code, ""),
         })
     passed_by_area: dict[str, list[str]] = {}

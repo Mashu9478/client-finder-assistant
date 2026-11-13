@@ -1,0 +1,18 @@
+{#
+  Homepage concept as a standalone picture: exactly 1440 x 1800 px.
+  Screenshot with --window-size=1440,1800 --hide-scrollbars.
+#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Homepage concept{% if concept.business_name %}: {{ concept.business_name }}{% endif %}</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 1440px; height: 1800px; overflow: hidden; background: #fff; }
+</style>
+</head>
+<body>
+{% include "_concept.html.j2" %}
+</body>
+</html>

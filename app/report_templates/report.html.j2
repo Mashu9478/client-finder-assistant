@@ -1,0 +1,567 @@
+{#
+  Website review report. A4, printed to PDF by headless Chromium / Edge:
+    --headless --no-pdf-header-footer --print-to-pdf=out.pdf report.html
+
+  Self-contained: no external resources, no JavaScript, no image files.
+  The homepage concept comes from the shared partial _concept.html.j2 and is
+  scaled down with a CSS transform inside a browser-style frame.
+
+  Every value from the context is autoescaped. Do not add |safe.
+#}
+{% set site_read = summary.site_read is not false %}
+{% set doc_kind = 'Website review' if site_read else 'Online presence review' %}
+{% set counts = summary.counts or {} %}
+{% set n_high = counts.high|default(0, true)|int %}
+{% set n_medium = counts.medium|default(0, true)|int %}
+{% set n_low = counts.low|default(0, true)|int %}
+{% set n_passed = summary.checks_passed|default(0, true)|int %}
+{# Priority wording follows the findings' own severity_label when there is one. #}
+{% set ns = namespace(n=0, total=0, any_passed=false, high='High priority', medium='Worth fixing', low='Nice to have') %}
+{% for area in areas or [] %}
+  {% if area.passed %}{% set ns.any_passed = true %}{% endif %}
+  {% for f in area.findings or [] %}
+    {% set ns.total = ns.total + 1 %}
+    {% if f.severity_label %}
+      {% if f.severity == 'high' %}{% set ns.high = f.severity_label %}
+      {% elif f.severity == 'medium' %}{% set ns.medium = f.severity_label %}
+      {% elif f.severity == 'low' %}{% set ns.low = f.severity_label %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+{% set name_len = (lead.name or '')|length %}
+{% set has_facts = site_read and (lead.website or summary.pages_checked or summary.response_seconds is number
+                    or summary.https is boolean or summary.platform or summary.pagespeed_mobile is number or summary.checked_on) %}
+{% set studio = sender.studio or sender.name %}
+
+{% macro dots(sev) %}<span class="dots dots-{{ sev if sev in ['high', 'medium', 'low'] else 'low' }}" aria-hidden="true"><i></i><i></i><i></i></span>{% endmacro %}
+
+{% macro tick() %}<svg class="tick" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.4 6.4l2.4 2.4 4.8-5.4"/></svg>{% endmacro %}
+
+{% macro status(area) %}
+{% if area.status_label %}
+<p class="status status-{{ area.status if area.status in ['urgent', 'needs_work', 'minor', 'good'] else 'minor' }}">{% if area.status == 'good' %}{{ tick() }}{% else %}<span class="status-mark" aria-hidden="true"></span>{% endif %}<span>{{ area.status_label }}</span></p>
+{% endif %}
+{% endmacro %}
+
+{% macro finding(f, n) %}
+<div class="finding">
+  <div class="finding-n">{{ n }}</div>
+  <div class="finding-body">
+    <div class="finding-top">
+      <h4 class="finding-title">{{ f.title }}</h4>
+      {% if f.severity_label %}
+      <p class="prio">{{ dots(f.severity) }}<span>{{ f.severity_label }}</span></p>
+      {% endif %}
+    </div>
+    {% if f.what %}
+    <p class="finding-what">{{ f.what }}</p>
+    {% endif %}
+    {% if f.fix %}
+    <div class="fix"><p class="fix-label">Recommended fix</p><p class="fix-text">{{ f.fix }}</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{# also=true: a short run-on line under an area's findings.
+   also=false: an area where nothing was wrong, kept to one compact row:
+   the checks, with the status label at the right-hand edge. #}
+{% macro passed_list(area, also) %}
+<div class="passed{% if not also %} passed-row{% endif %}">
+  <ul class="passed-items{% if also %} passed-items-run{% elif area.passed|length > 1 %} passed-items-2{% endif %}">
+    {% if also %}
+    <li class="passed-label">Also checked, and fine</li>
+    {% endif %}
+    {% for item in area.passed %}
+    <li>{{ tick() }}<span>{{ item }}</span></li>
+    {% endfor %}
+  </ul>
+  {% if not also %}
+  {{ status(area) }}
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro plain_url(u) %}{{ (u|string|replace('https://', '')|replace('http://', '')).rstrip('/') }}{% endmacro %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ doc_kind }}{% if lead.name %}: {{ lead.name }}{% endif %}</title>
+<style>
+  @page {
+    size: A4;
+    /* Side margins live on .sheet so the cover band can run edge to edge. */
+    margin: 13mm 0 14mm 0;
+    @bottom-left {
+      content: "{{ doc_kind }}";
+      padding: 0 0 4.5mm 16mm;
+      font: 7.5pt "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+      color: #8388A0;
+      vertical-align: bottom;
+    }
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      padding: 0 16mm 4.5mm 0;
+      font: 7.5pt "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+      color: #8388A0;
+      vertical-align: bottom;
+    }
+  }
+  @page :first { margin-top: 0; }
+
+  :root {
+    --ink: #1B1E33;
+    --text: #2B2F47;
+    --muted: #5D6279;
+    --rule: #D9DBE7;
+    --wash: #F3F4FA;
+    --accent: #3A3FA3;
+    --band: #23275E;
+    --band-soft: #C5C8F0;
+    --red: #B5382C;
+    --amber: #B36B00;
+    --green: #2A7A4C;
+    --slate: #6B7189;
+    --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --serif: Georgia, Cambria, "Times New Roman", "DejaVu Serif", serif;
+  }
+
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    margin: 0;
+    background: #fff;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 9.2pt;
+    line-height: 1.42;
+    -webkit-text-size-adjust: 100%;
+  }
+  .doc, .doc *, .doc *::before, .doc *::after { box-sizing: border-box; }
+  /* :where() keeps the reset at zero specificity, so single-class rules below still win */
+  :where(.doc) :where(h1, h2, h3, h4, p, ul, dl, dt, dd, figure) { margin: 0; padding: 0; font-size: inherit; font-weight: inherit; }
+  :where(.doc) ul { list-style: none; }
+  :where(.doc) a { color: inherit; text-decoration: none; }
+  .wrap { overflow-wrap: anywhere; }
+  .keep { break-inside: avoid; page-break-inside: avoid; }
+
+  .sheet { padding: 0 16mm; }
+
+  /* Cover band */
+  .cover {
+    position: relative;
+    padding: 10mm 16mm 5.5mm;
+    background: var(--band);
+    color: #fff;
+    break-inside: avoid;
+  }
+  .cover-kind { display: block; color: var(--band-soft); font-family: var(--sans); font-size: 11.5pt; font-weight: 600; line-height: 1.3; }
+  .cover-date { position: absolute; top: 10mm; right: 16mm; color: var(--band-soft); font-size: 9pt; line-height: 1.6; }
+  .cover-name {
+    display: block; max-width: 150mm; margin-top: 3mm;
+    font-family: var(--serif); font-size: 29pt; font-weight: 400; line-height: 1.12; letter-spacing: -.012em;
+    overflow-wrap: anywhere; text-wrap: balance;
+  }
+  .cover-name-long { font-size: 22pt; line-height: 1.16; }
+  .cover-name-xlong { font-size: 17.5pt; line-height: 1.22; letter-spacing: 0; }
+  .cover-where { display: flex; flex-wrap: wrap; gap: 0 3.2mm; margin-top: 3mm; color: #E4E5F6; font-size: 9.4pt; overflow-wrap: anywhere; }
+  .cover-where span + span { padding-left: 3.2mm; border-left: 0.5pt solid rgba(255, 255, 255, .4); }
+  .cover-by { margin-top: 4.5mm; padding-top: 2.2mm; border-top: 0.5pt solid rgba(255, 255, 255, .28); font-size: 9.4pt; overflow-wrap: anywhere; }
+  .cover-by span { color: var(--band-soft); }
+
+  /* Summary */
+  .summary { padding-top: 6.5mm; break-inside: avoid; }
+  .lead { color: var(--ink); font-family: var(--serif); font-size: 17pt; line-height: 1.25; letter-spacing: -.005em; overflow-wrap: anywhere; text-wrap: balance; }
+  .counts { display: flex; flex-wrap: wrap; gap: 3mm 0; margin-top: 5mm; }
+  .count { padding: 0 7mm; border-left: 0.5pt solid var(--rule); }
+  .count:first-child { padding-left: 0; border-left: 0; }
+  .count-n { display: block; color: var(--ink); font-family: var(--serif); font-size: 19pt; line-height: 1.1; }
+  .count-l { display: flex; align-items: center; gap: 1.4mm; margin-top: 0.8mm; color: var(--text); font-size: 8.2pt; font-weight: 600; white-space: nowrap; }
+  .count-plain { align-self: flex-end; color: var(--text); font-size: 9.4pt; font-weight: 600; }
+  .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 4.5mm; border-top: 0.5pt solid var(--rule); border-bottom: 0.5pt solid var(--rule); font-size: 8.6pt; }
+  .fact { margin-bottom: -0.5pt; padding: 1.7mm 4mm 1.9mm 0; border-bottom: 0.5pt solid var(--rule); }
+  .fact dt { color: var(--muted); font-size: 7.8pt; }
+  .fact dd { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+
+  /* Priority and status cues: a shape plus words, colour is only a helper */
+  .dots { display: inline-flex; gap: 0.7mm; flex: none; }
+  .dots i { width: 1.9mm; height: 1.9mm; border-radius: 50%; border: 0.6pt solid currentColor; }
+  .dots-high { color: var(--red); }
+  .dots-medium { color: var(--amber); }
+  .dots-low { color: var(--slate); }
+  .dots-high i, .dots-medium i:nth-child(-n+2), .dots-low i:first-child { background: currentColor; }
+  .tick { flex: none; width: 2.9mm; height: 2.9mm; fill: none; stroke: var(--green); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .status { display: flex; align-items: center; gap: 1.5mm; margin-top: 1.3mm; color: var(--ink); font-size: 8pt; font-weight: 600; }
+  .status-mark { flex: none; width: 2.3mm; height: 2.3mm; border-radius: 50%; border: 0.7pt solid currentColor; }
+  .status-urgent .status-mark { color: var(--red); background: currentColor; }
+  .status-needs_work .status-mark { color: var(--amber); background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+  .status-minor .status-mark { color: var(--slate); }
+
+  /* Sections */
+  .sec { margin-top: 7mm; }
+  .concept-page + .about { margin-top: 0; }
+  .sec-head { break-inside: avoid; break-after: avoid; page-break-after: avoid; }
+  .sec-title {
+    padding-top: 3mm; border-top: 1.5pt solid var(--ink);
+    color: var(--ink); font-family: var(--serif); font-size: 15.5pt; font-weight: 400; line-height: 1.2; letter-spacing: -.005em;
+    break-after: avoid; page-break-after: avoid;
+  }
+  .sec-intro { margin-top: 1.4mm; color: var(--muted); font-size: 9pt; text-wrap: pretty; }
+
+  /* Findings by area */
+  .area { margin-top: 2.7mm; padding-top: 2.5mm; border-top: 0.75pt solid var(--ink); }
+  .sec-head + .area { margin-top: 3.2mm; }
+  .area-first { display: grid; grid-template-columns: 42mm minmax(0, 1fr); column-gap: 5mm; align-items: start; break-inside: avoid; page-break-inside: avoid; }
+  .area-rest { margin-left: 47mm; }
+  .area-rest > * { margin-top: 2mm; padding-top: 2mm; border-top: 0.5pt solid var(--rule); }
+  .area-title { color: var(--ink); font-family: var(--serif); font-size: 11pt; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+  .area-about { margin-top: 1.5mm; color: var(--muted); font-size: 8.2pt; line-height: 1.4; overflow-wrap: anywhere; }
+
+  .finding { display: grid; grid-template-columns: 7mm minmax(0, 1fr); break-inside: avoid; page-break-inside: avoid; }
+  .finding-n { color: var(--muted); font-size: 8.4pt; font-weight: 600; line-height: 1.6; font-variant-numeric: tabular-nums; }
+  .finding-top { display: flex; align-items: baseline; justify-content: space-between; gap: 5mm; }
+  .finding-title { color: var(--ink); font-size: 9.8pt; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; min-width: 0; }
+  .prio { flex: none; display: flex; align-items: center; gap: 1.5mm; color: var(--text); font-size: 7.8pt; font-weight: 600; white-space: nowrap; }
+  .finding-what { margin-top: 0.5mm; overflow-wrap: anywhere; }
+  .fix { display: grid; grid-template-columns: 26mm minmax(0, 1fr); column-gap: 2mm; align-items: baseline; margin-top: 1.2mm; padding: 0.8mm 2.4mm 1mm; border-radius: 1.2mm; background: var(--wash); }
+  .fix-label { color: var(--accent); font-size: 7.8pt; font-weight: 600; white-space: nowrap; }
+  .fix-text { color: var(--ink); overflow-wrap: anywhere; }
+
+  .passed { break-inside: avoid; page-break-inside: avoid; }
+  .passed-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 5mm; }
+  .passed-row .passed-items { flex: 1 1 auto; min-width: 0; }
+  .passed-row .status { flex: none; margin-top: 0; line-height: 1.6; white-space: nowrap; }
+  .passed-items { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.8mm 6mm; font-size: 9pt; }
+  .passed-items-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .passed-items-run { display: flex; flex-wrap: wrap; gap: 0.6mm 5mm; }
+  .passed-items li { display: flex; align-items: flex-start; gap: 1.8mm; overflow-wrap: anywhere; min-width: 0; }
+  .passed-items .passed-label { color: var(--muted); font-size: 8pt; font-weight: 600; line-height: 1.6; }
+  .passed-items .tick { margin-top: 0.85mm; }
+  .area-first > .passed { padding-top: 0.5mm; }
+
+  /* What we would do: kept whole when it fits on a page */
+  .recs-keep { break-inside: avoid; page-break-inside: avoid; }
+  .rec-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 9mm; margin-top: 1.5mm; }
+  .rec-grid-1 { grid-template-columns: minmax(0, 110mm); }
+  .rec { padding: 2.5mm 0 2.7mm; border-bottom: 0.5pt solid var(--rule); break-inside: avoid; page-break-inside: avoid; }
+  .rec-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4mm; }
+  .rec-title { color: var(--ink); font-size: 9.8pt; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; min-width: 0; }
+  .tag { flex: none; padding: 0.1mm 1.7mm 0.3mm; border: 0.5pt solid var(--accent); border-radius: 1mm; color: var(--accent); font-size: 7.4pt; font-weight: 600; white-space: nowrap; }
+  .rec-detail { margin-top: 0.8mm; overflow-wrap: anywhere; }
+
+  /* Homepage concept, on a page of its own */
+  .concept-page { margin-top: 0; break-before: page; page-break-before: always; break-after: page; page-break-after: always; break-inside: avoid; }
+  .frame {
+    --k: 0.43;
+    margin-top: 5mm;
+    width: calc(1440px * var(--k) + 2px);
+    border: 1px solid #BFC3D4; border-radius: 2.4mm; overflow: hidden; background: #fff;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .frame-bar { display: flex; align-items: center; gap: 2.6mm; height: 6.4mm; padding: 0 2.6mm; border-bottom: 1px solid #BFC3D4; background: #ECEDF4; }
+  .frame-dots { display: flex; gap: 1.1mm; flex: none; }
+  .frame-dots i { width: 2mm; height: 2mm; border-radius: 50%; background: #C2C6D6; }
+  .frame-addr { flex: 1 1 auto; min-width: 0; height: 4mm; padding: 0 2.6mm; border-radius: 2mm; background: #fff; color: var(--muted); font-size: 6.6pt; line-height: 4mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .frame-view { width: calc(1440px * var(--k)); height: calc(1800px * var(--k)); overflow: hidden; }
+  .frame-view > .cx { transform: scale(var(--k)); transform-origin: 0 0; }
+  .concept-notes { width: calc(1440px * 0.43 + 2px); margin-top: 2.6mm; font-size: 8pt; line-height: 1.4; }
+  .concept-label { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+  .concept-shows { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6mm 4mm; margin-top: 1mm; color: var(--muted); }
+  .concept-shows li { display: flex; align-items: center; gap: 1.3mm; white-space: nowrap; }
+  .concept-shows .tick { stroke: var(--accent); }
+
+  /* About the sender */
+  .about-grid { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 10mm; align-items: start; margin-top: 4mm; }
+  .about-grid-2 { grid-template-columns: minmax(0, 1fr) 72mm; }
+  .about-lead { color: var(--ink); font-size: 10.2pt; overflow-wrap: anywhere; }
+  .sub-title { color: var(--muted); font-size: 8pt; font-weight: 600; break-after: avoid; }
+  .services { margin-top: 5mm; }
+  .services ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 6mm; margin-top: 1.2mm; border-top: 0.5pt solid var(--rule); }
+  .services li { padding: 1.5mm 0; border-bottom: 0.5pt solid var(--rule); color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+  .reply { padding: 5mm 5.5mm 5.5mm; border-radius: 1.6mm; background: var(--band); color: #fff; break-inside: avoid; }
+  .reply-title { font-family: var(--serif); font-size: 13pt; font-weight: 400; line-height: 1.25; }
+  .reply-text { margin-top: 1.8mm; color: #E4E5F6; font-size: 8.8pt; }
+  .reply-ways { margin-top: 3.5mm; border-top: 0.5pt solid rgba(255, 255, 255, .28); }
+  .reply-way { padding: 1.7mm 0 1.9mm; border-bottom: 0.5pt solid rgba(255, 255, 255, .28); }
+  .reply-way dt { color: var(--band-soft); font-size: 7.8pt; }
+  .reply-way dd { font-size: 9.6pt; font-weight: 600; overflow-wrap: anywhere; }
+  .work { margin-top: 8mm; break-inside: avoid; }
+  .work-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 9mm; margin-top: 1.2mm; border-top: 0.5pt solid var(--rule); }
+  .work-item { padding: 2.8mm 0 3mm; border-bottom: 0.5pt solid var(--rule); break-inside: avoid; }
+  .work-name { color: var(--ink); font-size: 9.8pt; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+  .work-desc { margin-top: 0.6mm; overflow-wrap: anywhere; }
+  .work-url { margin-top: 0.8mm; color: var(--accent); font-size: 8.4pt; overflow-wrap: anywhere; }
+  .work-more { margin-top: 3mm; color: var(--muted); font-size: 8.8pt; overflow-wrap: anywhere; }
+  .work-more a, .work-more span { color: var(--accent); font-weight: 600; }
+
+  .method { margin-top: 10mm; padding-top: 2.6mm; border-top: 0.5pt solid var(--rule); color: var(--muted); font-size: 7.6pt; line-height: 1.5; break-inside: avoid; }
+  .method p { max-width: 150mm; }
+
+  @media screen {
+    html { background: #E9EAF1; }
+    body { width: 210mm; margin: 8mm auto; padding-bottom: 14mm; box-shadow: 0 2mm 8mm rgba(27, 30, 51, .16); }
+    .concept-page { margin-top: 9mm; }
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <header class="cover">
+    <h1>
+      <span class="cover-kind">{{ doc_kind }}</span>
+      {% if lead.name %}
+      <span class="cover-name{% if name_len > 70 %} cover-name-xlong{% elif name_len > 34 %} cover-name-long{% endif %}">{{ lead.name }}</span>
+      {% endif %}
+    </h1>
+    {% if generated_on %}
+    <p class="cover-date">{{ generated_on }}</p>
+    {% endif %}
+    {% if lead.category or lead.address %}
+    <p class="cover-where">{% if lead.category %}<span>{{ lead.category }}</span>{% endif %}{% if lead.address %}<span>{{ lead.address }}</span>{% endif %}</p>
+    {% endif %}
+    {% if sender.byline or studio %}
+    <p class="cover-by"><span>Prepared by</span> {{ sender.byline or studio }}</p>
+    {% endif %}
+  </header>
+
+  <div class="sheet">
+
+    <section class="summary">
+        {% if summary.headline %}
+        <p class="lead">{{ summary.headline }}</p>
+        {% endif %}
+        {% if n_high or n_medium or n_low or n_passed %}
+        <ul class="counts">
+          {% if n_high %}
+          <li class="count"><span class="count-n">{{ n_high }}</span><span class="count-l">{{ dots('high') }}{{ ns.high }}</span></li>
+          {% endif %}
+          {% if n_medium %}
+          <li class="count"><span class="count-n">{{ n_medium }}</span><span class="count-l">{{ dots('medium') }}{{ ns.medium }}</span></li>
+          {% endif %}
+          {% if n_low %}
+          <li class="count"><span class="count-n">{{ n_low }}</span><span class="count-l">{{ dots('low') }}{{ ns.low }}</span></li>
+          {% endif %}
+          {% if n_passed %}
+          <li class="count"><span class="count-n">{{ n_passed }}</span><span class="count-l">{{ tick() }}{{ 'check passed' if n_passed == 1 else 'checks passed' }}</span></li>
+          {% endif %}
+          {% if site_read and n_passed and not (n_high or n_medium or n_low or ns.total) %}
+          <li class="count count-plain">Nothing that needs fixing</li>
+          {% endif %}
+        </ul>
+        {% endif %}
+      {% if has_facts %}
+      <dl class="facts">
+        {% if lead.website %}
+        <div class="fact"><dt>Website</dt><dd>{{ lead.website }}</dd></div>
+        {% endif %}
+        {% if summary.pages_checked %}
+        <div class="fact"><dt>Pages checked</dt><dd>{{ summary.pages_checked }}</dd></div>
+        {% endif %}
+        {% if summary.response_seconds is number %}
+        <div class="fact"><dt>Server response</dt><dd>{{ '%.1f'|format(summary.response_seconds) }} seconds</dd></div>
+        {% endif %}
+        {% if summary.https is boolean %}
+        <div class="fact"><dt>Secure connection</dt><dd>{{ 'Yes' if summary.https else 'No' }}</dd></div>
+        {% endif %}
+        {% if summary.platform %}
+        <div class="fact"><dt>Built with</dt><dd>{{ summary.platform }}</dd></div>
+        {% endif %}
+        {% if summary.pagespeed_mobile is number %}
+        <div class="fact"><dt>Mobile speed score</dt><dd>{{ summary.pagespeed_mobile|round|int }} out of 100</dd></div>
+        {% endif %}
+        {% if summary.checked_on %}
+        <div class="fact"><dt>Checked on</dt><dd>{{ summary.checked_on }}</dd></div>
+        {% endif %}
+      </dl>
+      {% endif %}
+    </section>
+
+    {% if areas %}
+    <section class="sec findings">
+      <div class="sec-head">
+        <h2 class="sec-title">{{ 'What we found' if ns.total else 'What we checked' }}</h2>
+        {% if ns.total %}
+        <p class="sec-intro">For each point: what we saw, why it matters and what we would change.</p>
+        {% elif ns.any_passed %}
+        <p class="sec-intro">Nothing here needs fixing. These are the checks that were run, area by area.</p>
+        {% endif %}
+      </div>
+      {% for area in areas %}
+      {% set fs = area.findings or [] %}
+      <div class="area">
+        <div class="area-first">
+          <div class="area-side">
+            <h3 class="area-title">{{ area.title }}</h3>
+            {% if fs or not area.passed %}
+            {{ status(area) }}
+            {% endif %}
+            {# All-clear areas stay on one line: title, checks, status. #}
+            {% if area.about and (fs or not area.passed) %}
+            <p class="area-about">{{ area.about }}</p>
+            {% endif %}
+          </div>
+          {% if fs %}
+          {% set ns.n = ns.n + 1 %}
+          {{ finding(fs[0], ns.n) }}
+          {% elif area.passed %}
+          {{ passed_list(area, false) }}
+          {% endif %}
+        </div>
+        {% if fs|length > 1 or (fs and area.passed) %}
+        <div class="area-rest">
+          {% for f in fs[1:] %}
+          {% set ns.n = ns.n + 1 %}
+          {{ finding(f, ns.n) }}
+          {% endfor %}
+          {% if fs and area.passed %}
+          {{ passed_list(area, true) }}
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if recommendations %}
+    <section class="sec recs{% if recommendations|length <= 8 %} recs-keep{% endif %}">
+      <div class="sec-head">
+        <h2 class="sec-title">What we would do</h2>
+        <p class="sec-intro">{{ 'The work we would suggest, based on the points above.' if ns.total else 'One suggestion, if it is useful.' if recommendations|length == 1 else 'A few suggestions, if they are useful.' }}</p>
+      </div>
+      <div class="rec-grid{% if recommendations|length == 1 %} rec-grid-1{% endif %}">
+        {% for r in recommendations %}
+        <div class="rec">
+          <div class="rec-top">
+            <h3 class="rec-title">{{ r.title }}</h3>
+            {% if r.service_label %}
+            <span class="tag">{{ r.service_label }}</span>
+            {% endif %}
+          </div>
+          {% if r.detail %}
+          <p class="rec-detail">{{ r.detail }}</p>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if concept %}
+    {% set cf = concept.features or {} %}
+    <section class="sec concept-page">
+      <div class="sec-head">
+        <h2 class="sec-title">How your homepage could look</h2>
+        <p class="sec-intro">This is a concept, not a finished design: it uses sample wording and simple shapes in place of your own text and photos.</p>
+      </div>
+        <figure class="frame">
+          <div class="frame-bar"><span class="frame-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="frame-addr">Concept preview</span></div>
+          <div class="frame-view">
+{% include "_concept.html.j2" %}
+          </div>
+        </figure>
+        {% if concept.label or cf.booking or cf.enquiry_form or cf.tap_to_call or cf.chat or cf.reviews %}
+        <div class="concept-notes">
+          {% if concept.label %}
+          <p class="concept-label">{{ concept.label }}</p>
+          {% endif %}
+          {% if cf.booking or cf.enquiry_form or cf.tap_to_call or cf.chat or cf.reviews %}
+          <ul class="concept-shows">
+            <li>It shows</li>
+            {% if cf.booking %}<li>{{ tick() }}<span>Online booking</span></li>{% endif %}
+            {% if cf.enquiry_form %}<li>{{ tick() }}<span>Enquiry form</span></li>{% endif %}
+            {% if cf.tap_to_call %}<li>{{ tick() }}<span>Tap-to-call</span></li>{% endif %}
+            {% if cf.chat %}<li>{{ tick() }}<span>Chat</span></li>{% endif %}
+            {% if cf.reviews %}<li>{{ tick() }}<span>Your reviews</span></li>{% endif %}
+          </ul>
+          {% endif %}
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% set work = (sender.portfolio or [])[:4] %}
+    {% set wa_digits = (sender.whatsapp or '')|string|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
+    {% set can_reply = sender.email or sender.whatsapp %}
+    {% if studio or sender.services or work or can_reply %}
+    <section class="sec about">
+      <div class="sec-head">
+        <h2 class="sec-title">{% if studio %}About {{ studio }}{% else %}Who prepared this{% endif %}</h2>
+      </div>
+      <div class="about-grid{% if can_reply %} about-grid-2{% endif %}">
+        <div class="about-main">
+          {% if sender.name and sender.studio %}
+          <p class="about-lead">This review was prepared by {{ sender.name }} of {{ sender.studio }}.</p>
+          {% elif studio %}
+          <p class="about-lead">This review was prepared by {{ studio }}.</p>
+          {% endif %}
+          {% if sender.services %}
+          <div class="services">
+            <h3 class="sub-title">What we do</h3>
+            <ul>
+              {% for s in sender.services %}
+              <li>{{ s }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+        </div>
+        {% if can_reply %}
+        <div class="reply">
+          <h3 class="reply-title">If any of this is useful</h3>
+          <p class="reply-text">You did not ask for this review, so there is nothing you need to do with it. If you would like to talk a point through, a short reply is enough.</p>
+          <dl class="reply-ways">
+            {% if sender.email %}
+            <div class="reply-way"><dt>Email</dt><dd><a href="mailto:{{ sender.email }}">{{ sender.email }}</a></dd></div>
+            {% endif %}
+            {% if sender.whatsapp %}
+            <div class="reply-way"><dt>WhatsApp</dt><dd>{% if wa_digits.isdigit() %}<a href="https://wa.me/{{ wa_digits }}">{{ sender.whatsapp }}</a>{% else %}{{ sender.whatsapp }}{% endif %}</dd></div>
+            {% endif %}
+          </dl>
+        </div>
+        {% endif %}
+      </div>
+      {% if work or sender.portfolio_url %}
+      <div class="work">
+        {% if work %}
+        <h3 class="sub-title">Recent work</h3>
+        <div class="work-grid">
+          {% for w in work %}
+          <div class="work-item">
+            {% if w.name %}
+            <p class="work-name">{{ w.name }}</p>
+            {% endif %}
+            {% if w.description %}
+            <p class="work-desc">{{ w.description }}</p>
+            {% endif %}
+            {% if w.url %}
+            <p class="work-url">{% if w.url.startswith(('http://', 'https://')) %}<a href="{{ w.url }}">{{ plain_url(w.url) }}</a>{% else %}{{ w.url }}{% endif %}</p>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if sender.portfolio_url %}
+        <p class="work-more">{{ 'More work at' if work else 'Our work is at' }} {% if sender.portfolio_url.startswith(('http://', 'https://')) %}<a href="{{ sender.portfolio_url }}">{{ plain_url(sender.portfolio_url) }}</a>{% else %}<span>{{ sender.portfolio_url }}</span>{% endif %}</p>
+        {% endif %}
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if method_note %}
+    <footer class="method">
+      <p>{{ method_note }}</p>
+    </footer>
+    {% endif %}
+
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,543 @@
+{#
+  Homepage concept: markup + namespaced CSS (everything is prefixed "cx").
+  Included by concept.html.j2 (full 1440x1800 canvas) and by report.html.j2
+  (the same canvas, scaled down inside a browser-style frame).
+
+  Expects `concept` in the context. All sizes are in px on purpose, so the
+  canvas does not change with the root font size of the page that includes it.
+  No external resources, no JavaScript.
+#}
+{% set cx = concept %}
+{% set cxf = cx.features or {} %}
+{% set cxp = cx.palette or {} %}
+{% set cx_services = (cx.sample_services or [])[:3] %}
+{% set cx_has_rating = cx.rating is number and cx.rating > 0 %}
+{% set cx_two_panels = cxf.booking and cxf.enquiry_form %}
+{% set cx_cta = 'Book online' if cxf.booking else 'Get in touch' %}
+{% set cx_headline = cx.headline or cx.business_name or '' %}
+{% set cx_sample_lines = [
+  'A short, plain summary of what this covers and who it is for.',
+  'What is included, how long it takes and how to arrange it.',
+  'When to choose this and what to expect on the day.',
+] %}
+{% macro cx_icon(name) %}
+{% if name == 'phone' %}
+<svg class="cx-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+{% elif name == 'pin' %}
+<svg class="cx-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+{% elif name == 'chat' %}
+<svg class="cx-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5h14a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-7.6L6 21.6v-4.1H5a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3z"/></svg>
+{% elif name == 'check' %}
+<svg class="cx-ico cx-ico-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.6l4.6 4.6L19 7.6"/></svg>
+{% elif name == 'star' %}
+<svg class="cx-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2l3 6.2 6.8 1-4.9 4.8 1.2 6.8-6.1-3.2-6.1 3.2 1.2-6.8L2.2 9.4l6.8-1z"/></svg>
+{% endif %}
+{% endmacro %}
+<style>
+  .cx {
+    --cx-primary: #1D4ED8;
+    --cx-dark: #1E3A8A;
+    --cx-tint: #EFF6FF;
+    --cx-accent: #F59E0B;
+    --cx-ink: #16181D;
+    --cx-muted: #5A6170;
+    --cx-line: #E3E5EA;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 1440px;
+    height: 1800px;
+    overflow: hidden;
+    background: #fff;
+    color: var(--cx-ink);
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 18px;
+    font-weight: 400;
+    font-style: normal;
+    line-height: 1.5;
+    letter-spacing: 0;
+    text-align: left;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .cx, .cx *, .cx *::before, .cx *::after { box-sizing: border-box; }
+  .cx * { margin: 0; padding: 0; border: 0; font: inherit; color: inherit; }
+  .cx svg { display: block; }
+
+  .cx .cx-ico { width: 1em; height: 1em; flex: none; fill: currentColor; }
+  .cx .cx-ico-line { fill: none; stroke: currentColor; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
+  .cx .cx-one-line { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+  /* Concept tag: sits on the canvas so the picture is never taken for a real site */
+  .cx .cx-tag {
+    position: absolute; top: 104px; right: 0; z-index: 6;
+    max-width: 620px;
+    padding: 8px 18px 9px 16px;
+    border-radius: 9px 0 0 9px;
+    background: #16181D; color: #fff;
+    font-size: 13.5px; font-weight: 600; line-height: 1.3;
+  }
+
+  /* Top bar */
+  .cx .cx-top {
+    flex: none; height: 84px;
+    display: flex; align-items: center; gap: 40px;
+    padding: 0 72px;
+    border-bottom: 1px solid var(--cx-line);
+  }
+  .cx .cx-brand { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 0 1 auto; }
+  .cx .cx-top .cx-brand { min-width: 300px; }
+  .cx .cx-mono {
+    flex: none; width: 46px; height: 46px; border-radius: 13px;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    background: var(--cx-primary); color: #fff;
+    font-size: 18px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+  }
+  .cx .cx-mono-small { font-size: 13px; letter-spacing: 0; }
+  .cx .cx-brand-name { max-width: 470px; font-size: 21px; font-weight: 600; letter-spacing: -.01em; }
+  .cx .cx-nav { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 34px; margin-left: auto; }
+  .cx .cx-nav-link { flex: 0 1 auto; min-width: 0; max-width: 210px; font-size: 16px; font-weight: 500; color: #3B4150; }
+  .cx .cx-call {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    max-width: 280px; height: 46px; padding: 0 20px;
+    border: 1.5px solid var(--cx-primary); border-radius: 999px;
+    color: var(--cx-dark); font-size: 16px; font-weight: 600; white-space: nowrap;
+  }
+  .cx .cx-call .cx-ico { color: var(--cx-primary); font-size: 17px; }
+  .cx .cx-top-end { margin-left: auto; }
+  .cx .cx-nav + .cx-call { margin-left: 0; }
+
+  /* Hero */
+  .cx .cx-hero {
+    flex: 3 1 auto; min-height: 0;
+    display: grid; grid-template-columns: minmax(0, 1fr) 520px; align-items: center; column-gap: 64px;
+    padding: 34px 72px; overflow: hidden;
+    background: var(--cx-tint);
+  }
+  .cx .cx-kicker { display: flex; align-items: center; gap: 16px; margin-bottom: 26px; min-width: 0; }
+  .cx .cx-chip {
+    flex: none; max-width: 300px; padding: 6px 15px 7px;
+    border: 1px solid var(--cx-line); border-radius: 999px; background: #fff;
+    color: var(--cx-dark); font-size: 15px; font-weight: 600;
+  }
+  .cx .cx-where { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--cx-muted); font-size: 15.5px; }
+  .cx .cx-where .cx-ico { color: var(--cx-primary); font-size: 17px; }
+  .cx .cx-headline {
+    max-width: 680px;
+    color: var(--cx-dark);
+    font-size: 78px; font-weight: 700; line-height: 1.03; letter-spacing: -.028em;
+    overflow-wrap: break-word;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+    padding-bottom: 6px;
+  }
+  .cx .cx-headline-long { font-size: 62px; line-height: 1.06; letter-spacing: -.024em; }
+  .cx .cx-headline-xlong { font-size: 52px; line-height: 1.08; letter-spacing: -.02em; }
+  .cx .cx-lede { max-width: 540px; margin-top: 22px; color: #3F4553; font-size: 21px; line-height: 1.5; }
+  .cx .cx-actions { display: flex; align-items: center; gap: 28px; margin-top: 36px; }
+  .cx .cx-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    height: 60px; padding: 0 32px; border-radius: 14px;
+    background: var(--cx-primary); color: #fff;
+    font-size: 18.5px; font-weight: 600; white-space: nowrap;
+  }
+  .cx .cx-btn-sm { height: 52px; padding: 0 26px; border-radius: 12px; font-size: 17px; }
+  .cx .cx-link-call { display: flex; align-items: center; gap: 10px; color: var(--cx-dark); font-size: 18.5px; font-weight: 600; white-space: nowrap; }
+  .cx .cx-link-call .cx-ico { color: var(--cx-primary); font-size: 20px; }
+
+  .cx .cx-art { position: relative; width: 520px; height: 436px; }
+  .cx .cx-shop { width: 520px; height: 436px; }
+  .cx .cx-f-primary { fill: var(--cx-primary); }
+  .cx .cx-f-dark { fill: var(--cx-dark); }
+  .cx .cx-f-tint { fill: var(--cx-tint); }
+  .cx .cx-f-accent { fill: var(--cx-accent); }
+  .cx .cx-f-white { fill: #fff; }
+  .cx .cx-s-dark { stroke: var(--cx-dark); }
+  .cx .cx-sign-text { fill: #fff; font-size: 40px; font-weight: 700; letter-spacing: .04em; }
+  .cx .cx-toast {
+    position: absolute; left: -60px; bottom: -16px;
+    display: flex; align-items: center; gap: 14px;
+    padding: 15px 22px 15px 15px; border-radius: 16px; background: #fff;
+    box-shadow: 0 18px 40px -18px rgba(20, 24, 40, .45), 0 0 0 1px rgba(20, 24, 40, .06);
+  }
+  .cx .cx-toast-mark {
+    flex: none; width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--cx-accent); color: #fff; font-size: 22px;
+  }
+  .cx .cx-toast-title { font-size: 16.5px; font-weight: 600; line-height: 1.25; }
+  .cx .cx-toast-sub { color: var(--cx-muted); font-size: 14px; line-height: 1.3; }
+
+  /* Services */
+  .cx .cx-services {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 34px 72px;
+  }
+  .cx .cx-h2 { font-size: 34px; font-weight: 700; line-height: 1.15; letter-spacing: -.02em; color: var(--cx-dark); }
+  .cx .cx-cards { display: grid; gap: 28px; margin-top: 22px; }
+  .cx .cx-cols-1 { grid-template-columns: minmax(0, 420px); }
+  .cx .cx-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cx .cx-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cx .cx-card { padding: 26px 28px 24px; border: 1px solid var(--cx-line); border-radius: 22px; background: #fff; min-width: 0; }
+  .cx .cx-card-mark {
+    position: relative; width: 52px; height: 52px; border-radius: 15px; background: var(--cx-tint); overflow: hidden;
+  }
+  .cx .cx-card-mark::before, .cx .cx-card-mark::after { content: ""; position: absolute; }
+  .cx .cx-mark-1::before { left: 12px; top: 12px; width: 28px; height: 28px; border-radius: 50%; background: var(--cx-primary); }
+  .cx .cx-mark-1::after { left: 22px; top: 22px; width: 8px; height: 8px; border-radius: 50%; background: var(--cx-tint); }
+  .cx .cx-mark-2::before { left: 11px; top: 11px; width: 20px; height: 20px; border-radius: 6px; background: var(--cx-primary); }
+  .cx .cx-mark-2::after { left: 21px; top: 21px; width: 20px; height: 20px; border-radius: 6px; background: var(--cx-accent); }
+  .cx .cx-mark-3::before { left: 12px; top: 26px; width: 28px; height: 14px; border-radius: 0 0 14px 14px; background: var(--cx-primary); }
+  .cx .cx-mark-3::after { left: 12px; top: 12px; width: 28px; height: 14px; border-radius: 14px 14px 0 0; background: var(--cx-accent); }
+  .cx .cx-card-title {
+    margin-top: 18px; font-size: 23px; font-weight: 600; line-height: 1.22; letter-spacing: -.01em; overflow-wrap: break-word;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+  .cx .cx-card-text { margin-top: 8px; color: var(--cx-muted); font-size: 16.5px; line-height: 1.5; }
+  .cx .cx-card-more { margin-top: 14px; color: var(--cx-primary); font-size: 16px; font-weight: 600; }
+
+  /* Reviews */
+  .cx .cx-reviews {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 64px;
+    padding: 30px 72px;
+    background: var(--cx-dark); color: #fff;
+  }
+  .cx .cx-score { flex: none; }
+  .cx .cx-score-num { font-size: 76px; font-weight: 700; line-height: 1; letter-spacing: -.03em; }
+  .cx .cx-stars { position: relative; width: 150px; height: 30px; margin-top: 12px; font-size: 30px; }
+  .cx .cx-stars-row { display: flex; width: 150px; }
+  .cx .cx-stars-base { color: rgba(255, 255, 255, .26); }
+  .cx .cx-stars-fill { position: absolute; left: 0; top: 0; overflow: hidden; color: var(--cx-accent); }
+  .cx .cx-score-sub { margin-top: 10px; color: rgba(255, 255, 255, .82); font-size: 16.5px; }
+  .cx .cx-quotes { flex: 1 1 auto; min-width: 0; }
+  .cx .cx-quotes-title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
+  .cx .cx-quote-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 18px; }
+  .cx .cx-quote { padding: 20px 22px; border: 1.5px dashed rgba(255, 255, 255, .34); border-radius: 18px; background: rgba(255, 255, 255, .06); }
+  .cx .cx-bar { height: 10px; border-radius: 5px; background: rgba(255, 255, 255, .26); }
+  .cx .cx-bar + .cx-bar { margin-top: 11px; }
+  .cx .cx-bar-80 { width: 80%; }
+  .cx .cx-bar-55 { width: 55%; }
+  .cx .cx-quote-who { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+  .cx .cx-quote-face { width: 26px; height: 26px; border-radius: 50%; background: rgba(255, 255, 255, .26); }
+  .cx .cx-quote-name { width: 96px; height: 9px; border-radius: 5px; background: rgba(255, 255, 255, .18); }
+
+  /* Booking, enquiry, contact */
+  .cx .cx-contact {
+    flex: 1 1 auto; min-height: 0;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: center; align-items: center; column-gap: 32px;
+    padding: 30px 72px;
+    background: var(--cx-tint);
+  }
+  .cx .cx-contact-solo { grid-template-columns: minmax(0, 1fr); }
+  .cx .cx-intro { padding-right: 40px; min-width: 0; }
+  .cx .cx-intro-title { font-size: 44px; font-weight: 700; line-height: 1.1; letter-spacing: -.024em; color: var(--cx-dark); }
+  .cx .cx-intro-text { max-width: 480px; margin-top: 14px; color: #3F4553; font-size: 19px; }
+  .cx .cx-details { margin-top: 26px; }
+  .cx .cx-detail { display: flex; align-items: flex-start; gap: 13px; font-size: 19px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+  .cx .cx-detail + .cx-detail { margin-top: 13px; }
+  .cx .cx-detail .cx-ico { margin-top: 3px; color: var(--cx-primary); font-size: 21px; }
+  .cx .cx-intro .cx-btn { margin-top: 28px; }
+  .cx .cx-panel { padding: 30px 32px 30px; border: 1px solid var(--cx-line); border-radius: 24px; background: #fff; min-width: 0; align-self: stretch; }
+  .cx .cx-panel-title { font-size: 27px; font-weight: 700; line-height: 1.2; letter-spacing: -.015em; }
+  .cx .cx-panel-text { margin-top: 4px; color: var(--cx-muted); font-size: 16.5px; }
+  .cx .cx-days { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-top: 20px; }
+  .cx .cx-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .cx .cx-pick {
+    display: flex; align-items: center; justify-content: center; height: 48px;
+    border: 1.5px solid var(--cx-line); border-radius: 12px;
+    font-size: 16px; font-weight: 600; color: #3B4150;
+  }
+  .cx .cx-pick-on { border-color: var(--cx-primary); background: var(--cx-primary); color: #fff; }
+  .cx .cx-pick-soft { border-color: var(--cx-primary); background: var(--cx-tint); color: var(--cx-dark); }
+  .cx .cx-chosen {
+    display: flex; align-items: center; gap: 12px; height: 50px; margin-top: 12px; padding: 0 16px;
+    border-radius: 12px; background: var(--cx-tint); color: var(--cx-dark); font-size: 16px; font-weight: 600;
+  }
+  .cx .cx-chosen .cx-ico { color: var(--cx-primary); font-size: 20px; }
+  .cx .cx-panel .cx-btn { margin-top: 20px; }
+  .cx .cx-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+  .cx .cx-field {
+    height: 52px; padding: 0 16px; display: flex; align-items: center;
+    border: 1.5px solid var(--cx-line); border-radius: 12px; background: #fff;
+    color: #7A8090; font-size: 16.5px;
+  }
+  .cx .cx-field-wide { grid-column: 1 / -1; }
+  .cx .cx-field-tall { height: 106px; align-items: flex-start; padding-top: 13px; }
+
+  /* Footer */
+  .cx .cx-foot {
+    flex: none; min-height: 104px;
+    display: flex; align-items: center; gap: 48px;
+    padding: 18px 72px;
+    background: var(--cx-dark); color: #fff;
+  }
+  .cx .cx-foot-chat { padding-right: 190px; }
+  .cx .cx-foot .cx-brand { flex: 1 1 auto; }
+  .cx .cx-foot .cx-mono { background: #fff; color: var(--cx-dark); }
+  .cx .cx-foot-name {
+    max-width: 560px; font-size: 19px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+  .cx .cx-foot-item { display: flex; align-items: center; gap: 10px; flex: 0 1 auto; min-width: 0; color: rgba(255, 255, 255, .88); font-size: 16px; }
+  .cx .cx-foot-item .cx-ico { font-size: 18px; color: #fff; opacity: .7; }
+  .cx .cx-foot-addr { max-width: 400px; line-height: 1.35; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .cx .cx-foot-phone { flex: none; white-space: nowrap; font-weight: 600; }
+
+  /* Chat */
+  .cx .cx-chat { position: absolute; right: 44px; bottom: 24px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+  .cx .cx-chat-note {
+    padding: 12px 18px; border-radius: 16px 16px 4px 16px; background: #fff;
+    box-shadow: 0 16px 36px -16px rgba(20, 24, 40, .5), 0 0 0 1px rgba(20, 24, 40, .07);
+    font-size: 15.5px; font-weight: 600; white-space: nowrap;
+  }
+  .cx .cx-chat-btn {
+    width: 66px; height: 66px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--cx-primary); color: #fff; font-size: 30px;
+    box-shadow: 0 0 0 4px #fff, 0 14px 30px -10px rgba(20, 24, 40, .55);
+  }
+</style>
+<div class="cx" style="{% if cxp.primary %}--cx-primary: {{ cxp.primary }}; {% endif %}{% if cxp.dark %}--cx-dark: {{ cxp.dark }}; {% endif %}{% if cxp.tint %}--cx-tint: {{ cxp.tint }}; {% endif %}{% if cxp.accent %}--cx-accent: {{ cxp.accent }};{% endif %}">
+  {% if cx.label %}
+  <div class="cx-tag cx-one-line">{{ cx.label }}</div>
+  {% endif %}
+
+  <div class="cx-top">
+    <div class="cx-brand">
+      {% if cx.initials %}
+      <div class="cx-mono{% if cx.initials|length > 2 %} cx-mono-small{% endif %}">{{ cx.initials }}</div>
+      {% endif %}
+      {% if cx.business_name %}
+      <div class="cx-brand-name cx-one-line">{{ cx.business_name }}</div>
+      {% endif %}
+    </div>
+    {% if cx_services %}
+    <div class="cx-nav">
+      {% for s in cx_services %}
+      <div class="cx-nav-link cx-one-line">{{ s }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if cxf.tap_to_call %}
+    <div class="cx-call{% if not cx_services %} cx-top-end{% endif %}">{{ cx_icon('phone') }}<span class="cx-one-line">{{ cx.phone or 'Call us' }}</span></div>
+    {% endif %}
+  </div>
+
+  <div class="cx-hero">
+    <div class="cx-hero-copy">
+      {% if cx.category or cx.address %}
+      <div class="cx-kicker">
+        {% if cx.category %}
+        <div class="cx-chip cx-one-line">{{ cx.category }}</div>
+        {% endif %}
+        {% if cx.address %}
+        <div class="cx-where">{{ cx_icon('pin') }}<span class="cx-one-line">{{ cx.address }}</span></div>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="cx-headline{% if cx_headline|length > 64 %} cx-headline-xlong{% elif cx_headline|length > 36 %} cx-headline-long{% endif %}">{{ cx_headline }}</div>
+      <div class="cx-lede">
+        {% if cxf.booking %}
+        Tell us what you need and pick a time that suits you. Booking is open online at any hour.
+        {% elif cxf.enquiry_form %}
+        Tell us what you need and we will get back to you. You can send a message at any hour.
+        {% else %}
+        Tell us what you need and we will take it from there.
+        {% endif %}
+      </div>
+      <div class="cx-actions">
+        <div class="cx-btn">{{ cx_cta }}</div>
+        {% if cxf.tap_to_call %}
+        <div class="cx-link-call">{{ cx_icon('phone') }}<span>{% if cx.phone %}Call {{ cx.phone }}{% else %}Call us{% endif %}</span></div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="cx-art">
+      <svg class="cx-shop" viewBox="0 0 560 470" aria-hidden="true">
+        <circle class="cx-f-primary" cx="290" cy="238" r="214" opacity=".13"/>
+        <circle class="cx-f-accent" cx="486" cy="96" r="30"/>
+        <rect class="cx-f-dark" x="50" y="330" width="8" height="98"/>
+        <circle class="cx-f-accent" cx="54" cy="312" r="40"/>
+        <rect class="cx-f-white" x="100" y="130" width="368" height="298" rx="12"/>
+        <rect class="cx-f-dark" x="100" y="196" width="368" height="34" opacity=".1"/>
+        <rect class="cx-f-dark" x="180" y="58" width="208" height="80" rx="16"/>
+        <text class="cx-sign-text" x="284" y="112" text-anchor="middle">{{ cx.initials }}</text>
+        <g>
+          <path class="cx-f-primary" d="M88 150h56v48a28 28 0 0 1-56 0z"/>
+          <path class="cx-f-white" d="M144 150h56v48a28 28 0 0 1-56 0z"/>
+          <path class="cx-f-primary" d="M200 150h56v48a28 28 0 0 1-56 0z"/>
+          <path class="cx-f-white" d="M256 150h56v48a28 28 0 0 1-56 0z"/>
+          <path class="cx-f-primary" d="M312 150h56v48a28 28 0 0 1-56 0z"/>
+          <path class="cx-f-white" d="M368 150h56v48a28 28 0 0 1-56 0z"/>
+          <path class="cx-f-primary" d="M424 150h56v48a28 28 0 0 1-56 0z"/>
+          <rect class="cx-f-dark" x="84" y="140" width="400" height="14" rx="7"/>
+        </g>
+        <rect class="cx-f-tint cx-s-dark" x="136" y="262" width="150" height="106" rx="8" stroke-width="6"/>
+        <rect class="cx-f-dark" x="208" y="262" width="6" height="106"/>
+        <circle class="cx-f-accent" cx="166" cy="372" r="15"/>
+        <circle class="cx-f-primary" cx="194" cy="368" r="15"/>
+        <circle class="cx-f-accent" cx="226" cy="372" r="15"/>
+        <circle class="cx-f-primary" cx="256" cy="368" r="15"/>
+        <rect class="cx-f-dark" x="130" y="378" width="162" height="24" rx="6"/>
+        <path class="cx-f-dark" d="M326 428V300a52 52 0 0 1 104 0v128z"/>
+        <path class="cx-f-tint" d="M342 352v-52a36 36 0 0 1 72 0v52z"/>
+        <circle class="cx-f-accent" cx="412" cy="382" r="7"/>
+        <rect class="cx-f-primary" x="492" y="372" width="34" height="56" rx="8"/>
+        <rect class="cx-f-white" x="500" y="386" width="18" height="5" rx="2.5"/>
+        <rect class="cx-f-dark" x="30" y="426" width="510" height="10" rx="5"/>
+      </svg>
+      {% if cxf.booking or cxf.enquiry_form %}
+      <div class="cx-toast">
+        <div class="cx-toast-mark">{{ cx_icon('check') }}</div>
+        <div>
+          {% if cxf.booking %}
+          <div class="cx-toast-title">Booking confirmed</div>
+          <div class="cx-toast-sub">A reminder goes out before the visit</div>
+          {% else %}
+          <div class="cx-toast-title">Enquiry sent</div>
+          <div class="cx-toast-sub">It goes straight to the team</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if cx_services %}
+  <div class="cx-services">
+    <div class="cx-h2">What we do</div>
+    <div class="cx-cards cx-cols-{{ cx_services|length }}">
+      {% for s in cx_services %}
+      <div class="cx-card">
+        <div class="cx-card-mark cx-mark-{{ loop.index }}"></div>
+        <div class="cx-card-title">{{ s }}</div>
+        <div class="cx-card-text">{{ cx_sample_lines[loop.index0] }}</div>
+        <div class="cx-card-more">Find out more</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if cxf.reviews %}
+  <div class="cx-reviews">
+    {% if cx_has_rating %}
+    <div class="cx-score">
+      <div class="cx-score-num">{{ '%.1f'|format(cx.rating) }}</div>
+      <div class="cx-stars">
+        <div class="cx-stars-row cx-stars-base">{% for i in range(5) %}{{ cx_icon('star') }}{% endfor %}</div>
+        <div class="cx-stars-fill" style="width: {{ '%.1f'|format([[cx.rating, 0]|max, 5]|min * 20) }}%">
+          <div class="cx-stars-row">{% for i in range(5) %}{{ cx_icon('star') }}{% endfor %}</div>
+        </div>
+      </div>
+      <div class="cx-score-sub">
+        {% if cx.reviews is number and cx.reviews > 0 %}
+        out of 5, from {{ cx.reviews }} {{ 'review' if cx.reviews == 1 else 'reviews' }}
+        {% else %}
+        out of 5
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    <div class="cx-quotes">
+      <div class="cx-quotes-title">Your customer reviews</div>
+      <div class="cx-quote-row">
+        {% for i in range(3) %}
+        <div class="cx-quote">
+          <div class="cx-bar"></div>
+          <div class="cx-bar cx-bar-80"></div>
+          <div class="cx-bar cx-bar-55"></div>
+          <div class="cx-quote-who"><div class="cx-quote-face"></div><div class="cx-quote-name"></div></div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="cx-contact{% if not (cxf.booking or cxf.enquiry_form) %} cx-contact-solo{% endif %}">
+    {% if not cx_two_panels %}
+    <div class="cx-intro">
+      <div class="cx-intro-title">{{ 'Get in touch' if cxf.enquiry_form or not cxf.booking else 'Book a visit' }}</div>
+      <div class="cx-intro-text">
+        {% if cxf.enquiry_form %}
+        Send a message and it reaches the team straight away.
+        {% elif cxf.booking %}
+        Choose a day and a time, and the visit is booked.
+        {% else %}
+        We are glad to answer any question.
+        {% endif %}
+      </div>
+      {% if cx.phone or cx.address %}
+      <div class="cx-details">
+        {% if cx.phone %}
+        <div class="cx-detail">{{ cx_icon('phone') }}<span>{{ cx.phone }}</span></div>
+        {% endif %}
+        {% if cx.address %}
+        <div class="cx-detail">{{ cx_icon('pin') }}<span>{{ cx.address }}</span></div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if not (cxf.booking or cxf.enquiry_form) %}
+      <div class="cx-btn">Get in touch</div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if cxf.booking %}
+    <div class="cx-panel">
+      <div class="cx-panel-title">Book online</div>
+      <div class="cx-panel-text">Pick a day and a time that suits you.</div>
+      <div class="cx-days">
+        {% for d in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] %}
+        <div class="cx-pick{% if loop.index == 3 %} cx-pick-on{% endif %}">{{ d }}</div>
+        {% endfor %}
+      </div>
+      <div class="cx-slots">
+        {% for t in ['Morning', 'Midday', 'Afternoon'] %}
+        <div class="cx-pick{% if loop.index == 2 %} cx-pick-soft{% endif %}">{{ t }}</div>
+        {% endfor %}
+      </div>
+      <div class="cx-chosen">{{ cx_icon('check') }}<span>Wednesday, around midday</span></div>
+      <div class="cx-btn cx-btn-sm">Confirm booking</div>
+    </div>
+    {% endif %}
+    {% if cxf.enquiry_form %}
+    <div class="cx-panel">
+      <div class="cx-panel-title">Send an enquiry</div>
+      <div class="cx-panel-text">Tell us what you need and we will get back to you.</div>
+      <div class="cx-fields">
+        <div class="cx-field">Your name</div>
+        <div class="cx-field">Phone number</div>
+        <div class="cx-field cx-field-wide cx-field-tall">How can we help?</div>
+      </div>
+      <div class="cx-btn cx-btn-sm">Send enquiry</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="cx-foot{% if cxf.chat %} cx-foot-chat{% endif %}">
+    <div class="cx-brand">
+      {% if cx.initials %}
+      <div class="cx-mono{% if cx.initials|length > 2 %} cx-mono-small{% endif %}">{{ cx.initials }}</div>
+      {% endif %}
+      {% if cx.business_name %}
+      <div class="cx-foot-name">{{ cx.business_name }}</div>
+      {% endif %}
+    </div>
+    {% if cx.address %}
+    <div class="cx-foot-item">{{ cx_icon('pin') }}<span class="cx-foot-addr">{{ cx.address }}</span></div>
+    {% endif %}
+    {% if cx.phone %}
+    <div class="cx-foot-item cx-foot-phone">{{ cx_icon('phone') }}<span>{{ cx.phone }}</span></div>
+    {% endif %}
+  </div>
+
+  {% if cxf.chat %}
+  <div class="cx-chat">
+    <div class="cx-chat-note">Hi, how can we help?</div>
+    <div class="cx-chat-btn">{{ cx_icon('chat') }}</div>
+  </div>
+  {% endif %}
+</div>

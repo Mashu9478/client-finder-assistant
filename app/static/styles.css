@@ -550,6 +550,28 @@ table.leads tbody tr.is-open td:first-child { box-shadow: inset 3px 0 0 var(--ac
 .email-confirm p { margin-bottom: 12px; }
 .select--medium { max-width: 300px; }
 
+/* Report and concept picture: the tall picture shows its top part in a frame. */
+#d-report-title:focus-visible { outline: none; }
+.concept { display: flex; flex-direction: column; gap: 8px; }
+.concept-frame {
+  position: relative; max-height: 420px; overflow: hidden;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-m); background: var(--sunk);
+}
+.concept-frame img { display: block; width: 100%; height: auto; }
+.concept-frame img[hidden] { display: none; }
+.concept-frame::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 56px; pointer-events: none;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.92));
+}
+.concept-frame.is-plain::after { display: none; }
+.concept-frame.is-busy img { opacity: 0.45; }
+.concept-missing { padding: 28px 16px; max-width: none; }
+.concept figcaption { font-size: 14.5px; font-weight: 600; }
+.concept figcaption .icon { width: 13px; height: 13px; margin-left: 4px; vertical-align: -1px; display: inline-block; }
+.cell-tag { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.cell-tag .icon { width: 13px; height: 13px; color: var(--accent-strong); }
+
+
 .drawer-foot { border-top: 1px solid var(--line); padding: 14px 28px; background: #f7f9fb; }
 .drawer-actions { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .drawer-confirm p { margin-bottom: 12px; }
