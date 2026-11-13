@@ -216,9 +216,15 @@ def upsert_place(search_id: int, place: dict[str, Any]) -> tuple[int, bool]:
         existing = None
         if place.get("place_id"):
             existing = db.execute("SELECT id FROM leads WHERE place_id = ?", (place["place_id"],)).fetchone()
+        listed_emails = [e for e in (place.get("emails") or []) if isinstance(e, str) and "@" in e]
         if existing:
             lead_id, created = existing["id"], False
-            # Refresh the facts Google gave us; keep the user's status, notes and audit.
+            # Refresh the listing's facts; keep the user's status, notes and audit.
+            if listed_emails:
+                row = db.execute("SELECT emails FROM leads WHERE id = ?", (lead_id,)).fetchone()
+                merged = _loads(row["emails"], [])
+                merged.extend(e for e in listed_emails if e not in merged)
+                db.execute("UPDATE leads SET emails = ? WHERE id = ?", (json.dumps(merged[:8]), lead_id))
             db.execute(
                 "UPDATE leads SET name=?, category=?, address=?, rating=?, reviews=?, maps_url=?, "
                 "phone=COALESCE(?, phone), website=COALESCE(?, website), updated_at=? WHERE id=?",
@@ -232,12 +238,13 @@ def upsert_place(search_id: int, place: dict[str, Any]) -> tuple[int, bool]:
             now = now_iso()
             cur = db.execute(
                 "INSERT INTO leads (search_id, place_id, domain, name, category, address, website, phone, "
-                "rating, reviews, maps_url, source, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google_places', ?, ?)",
+                "emails, rating, reviews, maps_url, source, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     search_id, place.get("place_id"), website_domain(place.get("website")), place["name"],
                     place.get("category"), place.get("address"), place.get("website"), place.get("phone"),
-                    place.get("rating"), place.get("reviews"), place.get("maps_url"), now, now,
+                    json.dumps(listed_emails[:8]), place.get("rating"), place.get("reviews"),
+                    place.get("maps_url"), place.get("source") or "google_places", now, now,
                 ),
             )
             lead_id, created = cur.lastrowid, True

@@ -896,7 +896,7 @@ function auditBadge(lead) {
     case 'running':
       return h('span', { class: 'state state--busy' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Auditing…');
     case 'no_website':
-      return h('span', { class: 'state state--nosite' }, 'No website');
+      return h('span', { class: 'state state--nosite' }, lead.source === 'openstreetmap' ? 'None listed' : 'No website');
     case 'failed':
       return h('span', { class: 'state state--failed' }, 'Could not read site');
     case 'blocked':
@@ -1285,7 +1285,7 @@ function drawerFacts(lead) {
   else rows.push(h('p', { class: 'fact' }, icon('globe'), h('span', { class: 'none' }, 'No website')));
 
   const maps = safeUrl(lead.maps_url);
-  if (maps) rows.push(h('p', { class: 'fact' }, icon('map'), externalLink(maps, 'Open in Google Maps', 'maps')));
+  if (maps) rows.push(h('p', { class: 'fact' }, icon('map'), externalLink(maps, /openstreetmap\.org/i.test(maps) ? 'Open in OpenStreetMap' : 'Open in Google Maps', 'maps')));
 
   if (typeof lead.rating === 'number') {
     const reviews = typeof lead.reviews === 'number' ? ` from ${plural(lead.reviews, 'review', 'reviews')}` : '';
@@ -1681,7 +1681,7 @@ function populateSettings(s) {
   fill(els.stPortfolio, (Array.isArray(s.portfolio) ? s.portfolio : []).map((p) => portfolioRow(p || {})));
   els.stGoogleKey.value = '';
   els.stClaudeKey.value = '';
-  keyState(els.stGoogleState, $('st-google-help'), !!s.has_google_key, 'Needed to find businesses. ');
+  keyState(els.stGoogleState, $('st-google-help'), !!s.has_google_key, 'Optional. Gives fuller results than the free directory. ');
   keyState(els.stClaudeState, $('st-claude-help'), !!s.has_claude_key, '');
   els.stPagespeed.checked = !!s.use_pagespeed;
   settingsUi.populated = true;

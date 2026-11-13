@@ -154,3 +154,17 @@ def test_contact_helpers():
     assert extract_emails(soup, "www.shop.example") == ["sales@shop.example", "owner@gmail.com"]
     assert is_social_or_directory_url("https://m.facebook.com/x") == "Facebook"
     assert is_social_or_directory_url("https://joes.example") is None
+
+
+def test_search_words_map_to_directory_tags():
+    from app.osm import build_overpass_query, tags_for
+    assert tags_for("Dentists")[0] == [("amenity", "dentist"), ("healthcare", "dentist")]
+    assert tags_for("barbers")[0] == [("shop", "hairdresser")]          # not also a bar
+    assert tags_for("pet shops")[0] == [("shop", "pet")]
+    assert tags_for("petrol stations")[0] == []                          # not a pet shop
+    assert tags_for("bakeries") == ([("shop", "bakery")], "bakery")
+    assert tags_for("veterinarians")[0] == [("amenity", "veterinary")]
+    assert tags_for("real estate agents")[0] == [("office", "estate_agent")]
+    # Whatever is typed cannot break out of the query
+    hostile = build_overpass_query('x"];node(1);out;//', (1, 2, 3, 4), 10)
+    assert '"];' not in hostile.replace('"](1.00000', "").replace('"."](', "") and "node(1)" not in hostile

@@ -108,6 +108,7 @@ def public_settings() -> dict[str, Any]:
     out["use_pagespeed"] = bool(out["use_pagespeed"])
     out["has_google_key"] = bool(get_secret("google_api_key"))
     out["has_claude_key"] = bool(get_secret("claude_api_key"))
+    out["search_source"] = "google" if out["has_google_key"] else "openstreetmap"
     return out
 
 

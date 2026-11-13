@@ -63,6 +63,10 @@ def site_handler(request: httpx.Request) -> httpx.Response:
 
     if host == "places.googleapis.com":
         return places_handler(request)
+    if host == "nominatim.openstreetmap.org":
+        return nominatim_handler(request)
+    if host in ("overpass-api.de", "overpass.private.coffee"):
+        return overpass_handler(request)
 
     if host == "good.example":
         if path == "/robots.txt":
@@ -111,6 +115,44 @@ def site_handler(request: httpx.Request) -> httpx.Response:
 
 
 PLACES_STATE = {"calls": [], "mode": "ok"}
+OSM_STATE = {"nominatim": [], "overpass": [], "mode": "ok"}
+
+OSM_ELEMENTS = [
+    {"type": "node", "id": 1, "lat": 29.7, "lon": -95.4, "tags": {"name": "No Contact Dental", "amenity": "dentist"}},
+    {"type": "way", "id": 2, "center": {"lat": 29.7, "lon": -95.4}, "tags": {
+        "name": "Bright Smile Dental", "amenity": "dentist", "website": "https://good.example/",
+        "contact:phone": "+1 713-555-0142;+1 713-555-0143", "email": "Hello@Good.example",
+        "addr:housenumber": "1200", "addr:street": "Main St", "addr:city": "Houston", "addr:postcode": "77002"}},
+    {"type": "node", "id": 3, "tags": {"name": "Phone Only Dental", "healthcare": "dentist", "phone": "+1 713-555-0100"}},
+    {"type": "node", "id": 4, "tags": {"amenity": "dentist"}},
+    {"type": "node", "id": 5, "tags": {"name": "Closed Dental", "disused:amenity": "dentist", "amenity": "dentist"}},
+    {"type": "node", "id": 6, "tags": {"name": "Bright Smile Dental", "amenity": "dentist", "website": "https://good.example/"}},
+]
+
+
+def nominatim_handler(request: httpx.Request) -> httpx.Response:
+    q = request.url.params.get("q", "")
+    OSM_STATE["nominatim"].append({"q": q, "headers": dict(request.headers), "params": dict(request.url.params)})
+    if "nowhere" in q.lower():
+        return httpx.Response(200, json=[])
+    if q.lower() == "texas":
+        return httpx.Response(200, json=[{"boundingbox": ["25.8", "36.5", "-106.6", "-93.5"]}])
+    if "main st" in q.lower():
+        return httpx.Response(200, json=[{"boundingbox": ["29.7500", "29.7501", "-95.3601", "-95.3600"]}])
+    return httpx.Response(200, json=[{"osm_type": "relation", "osm_id": 2688911, "display_name": "Houston, Texas",
+                                      "boundingbox": ["29.52", "30.11", "-95.91", "-95.01"]}])
+
+
+def overpass_handler(request: httpx.Request) -> httpx.Response:
+    from urllib.parse import parse_qs
+    query = parse_qs(request.content.decode())["data"][0]
+    OSM_STATE["overpass"].append({"host": request.url.host, "query": query, "headers": dict(request.headers)})
+    mode = OSM_STATE["mode"]
+    if mode == "busy" or (mode == "main_busy" and request.url.host == "overpass-api.de"):
+        return httpx.Response(429, text="rate limited")
+    if mode == "empty":
+        return httpx.Response(200, json={"elements": []})
+    return httpx.Response(200, json={"elements": OSM_ELEMENTS})
 
 
 def places_handler(request: httpx.Request) -> httpx.Response:
@@ -141,6 +183,9 @@ def places_handler(request: httpx.Request) -> httpx.Response:
 def transport():
     PLACES_STATE["calls"].clear()
     PLACES_STATE["mode"] = "ok"
+    OSM_STATE["nominatim"].clear()
+    OSM_STATE["overpass"].clear()
+    OSM_STATE["mode"] = "ok"
     return httpx.MockTransport(site_handler)
 
 

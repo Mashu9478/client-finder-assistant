@@ -37,13 +37,14 @@ Times are ISO 8601 UTC strings (`2026-11-13T17:20:00Z`).
 
 - `website`, `phone`, `rating`, `reviews`, `maps_url`, `category`, `address`,
   `search_id`, `opportunity_score` can be `null`.
-- `source`: `google_places` | `manual`.
+- `source`: `google_places` | `openstreetmap` | `manual`.
 - `status` (the user's pipeline): `new` | `shortlisted` | `contacted` |
   `replied` | `won` | `rejected`.
 - `audit_status`: `pending` | `running` | `done` | `failed` | `no_website` |
   `blocked` (the site's robots.txt asks bots to stay out, so it was not read).
 - `opportunity_score`: 0–100, higher means more to sell. `null` until audited.
-  A business with no website scores high (`no_website`).
+  A business with no website scores high (`no_website`). For `openstreetmap`
+  leads a blank website is only a hint, so those score a cautious 45.
 - `services`: which of the user's services fit — any of `website`, `app`,
   `ai`, `data`.
 
@@ -124,9 +125,13 @@ Everything above plus:
   "portfolio": [{"name": "Project", "description": "What it is", "url": "https://…"}],
   "use_pagespeed": false,
   "has_google_key": false,
-  "has_claude_key": false
+  "has_claude_key": false,
+  "search_source": "openstreetmap"
 }
 ```
+
+`search_source` is read-only: `google` when a Google key is saved, otherwise
+`openstreetmap` (the free directory, which needs a `location` for every search).
 
 API keys are write-only: the server never returns them, only `has_*_key`.
 
@@ -138,7 +143,7 @@ API keys are write-only: the server never returns them, only `has_*_key`.
 | PUT | `/api/settings` | any Settings fields, plus optional `google_api_key`, `claude_api_key` (omitted or `""` = keep the saved key) | Settings |
 | POST | `/api/settings/test-google` | — | `{"ok": true, "message": "Google Places key works."}` (also `ok: false` with the reason; always HTTP 200) |
 | GET | `/api/stats` | — | `{"total": 40, "with_email": 22, "with_phone": 35, "no_website": 6, "high_opportunity": 14, "by_status": {"new": 30, "shortlisted": 4, "contacted": 3, "replied": 2, "won": 1, "rejected": 0}}` |
-| POST | `/api/searches` | `{"query": "dentists", "location": "Houston, Texas", "max_results": 20}` (`location` optional, `max_results` 1–60, default 20) | Search (HTTP 201). Runs in the background. 400 if no Google key is saved. |
+| POST | `/api/searches` | `{"query": "dentists", "location": "Houston, Texas", "max_results": 20}` (`location` optional, `max_results` 1–60, default 20) | Search (HTTP 201). Runs in the background. Uses Google when a key is saved, otherwise the free OpenStreetMap directory; 400 if neither a key nor a `location` is given. |
 | GET | `/api/searches` | — | `[Search]`, newest first |
 | GET | `/api/searches/{id}` | — | Search |
 | GET | `/api/leads` | query: `search_id`, `status`, `min_score`, `has_email` (`true`), `has_website` (`true`/`false`), `q` (text in name/address/website), `sort` (`score` default, `newest`, `name`, `rating`) | `[Lead list form]` |

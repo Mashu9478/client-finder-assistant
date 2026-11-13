@@ -10,6 +10,7 @@ import httpx
 
 from . import config, db
 from .audit import audit_site
+from .osm import search_osm
 from .places import PlacesError, search_places
 
 log = logging.getLogger("cfa.jobs")
@@ -87,13 +88,13 @@ class Jobs:
             return
         try:
             db.set_search_status(search_id, "finding")
-            places = await search_places(
-                self.client,
-                config.get_secret("google_api_key"),
-                search["query"],
-                search["location"],
-                search["max_results"],
-            )
+            google_key = config.get_secret("google_api_key")
+            if google_key:
+                places = await search_places(
+                    self.client, google_key, search["query"], search["location"], search["max_results"],
+                )
+            else:
+                places = await search_osm(self.client, search["query"], search["location"], search["max_results"])
             for place in places:
                 db.upsert_place(search_id, place)
             db.set_search_status(search_id, "auditing")

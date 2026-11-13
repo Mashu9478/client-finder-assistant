@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app import config
 from app.main import create_app
 
-from conftest import PLACES_STATE
+from conftest import OSM_STATE, PLACES_STATE
 
 
 @pytest.fixture
@@ -51,9 +51,71 @@ def test_settings_never_return_keys(client):
     assert json.loads(config.SETTINGS_PATH.read_text())["google_api_key"] == "secret-google"
 
 
-def test_search_needs_a_key(client):
-    resp = client.post("/api/searches", json={"query": "dentists", "location": "Houston"})
-    assert resp.status_code == 400 and "Settings" in resp.json()["detail"]
+def test_free_search_without_a_key(client):
+    assert client.get("/api/settings").json()["search_source"] == "openstreetmap"
+    # The free search cannot cover the whole world: it needs a place
+    resp = client.post("/api/searches", json={"query": "dentists"})
+    assert resp.status_code == 400 and "needs a place" in resp.json()["detail"]
+
+    search = client.post("/api/searches", json={"query": "Dentists", "location": "Houston, Texas", "max_results": 10}).json()
+    done = wait_for(client, f"/api/searches/{search['id']}", lambda s: s["status"] in ("done", "error"))
+    assert done["status"] == "done", done
+    assert done["found"] == 3 and done["audited"] == 3  # unnamed, disused and duplicate entries dropped
+    assert PLACES_STATE["calls"] == []  # Google was never contacted
+
+    geocode = OSM_STATE["nominatim"][0]
+    assert geocode["q"] == "Houston, Texas" and geocode["params"]["format"] == "jsonv2"
+    assert "ClientFinderAssistant" in geocode["headers"]["user-agent"]
+    overpass = OSM_STATE["overpass"][0]
+    assert overpass["host"] == "overpass-api.de"
+    assert 'nwr["amenity"="dentist"]["name"](29.52000,-95.91000,30.11000,-95.01000);' in overpass["query"]
+    assert "ClientFinderAssistant" in overpass["headers"]["user-agent"]
+
+    leads = client.get("/api/leads", params={"search_id": search["id"], "sort": "newest"}).json()
+    by_name = {l["name"]: l for l in leads}
+    assert set(by_name) == {"Bright Smile Dental", "Phone Only Dental", "No Contact Dental"}
+    bright = by_name["Bright Smile Dental"]
+    assert bright["source"] == "openstreetmap" and bright["audit_status"] == "done"
+    assert bright["phone"] == "+1 713-555-0142" and bright["category"] == "Dentist"
+    assert bright["address"] == "1200 Main St, Houston, 77002"
+    assert bright["maps_url"] == "https://www.openstreetmap.org/way/2"
+    assert bright["emails"][0] == "hello@good.example" and "info@good.example" in bright["emails"]
+    assert bright["rating"] is None
+    # A blank website in the free directory is only a hint, so it is scored cautiously
+    unlisted = by_name["Phone Only Dental"]
+    assert unlisted["audit_status"] == "no_website" and unlisted["opportunity_score"] == 45
+    assert unlisted["top_issues"] == ["No website listed (check first)"]
+    # The entry with a website came first, the one with nothing last
+    assert [l["name"] for l in leads][0] == "No Contact Dental" and bright["id"] < unlisted["id"] < by_name["No Contact Dental"]["id"]
+
+    # With a Google key saved, Google is used instead
+    save_key(client)
+    assert client.get("/api/settings").json()["search_source"] == "google"
+    again = client.post("/api/searches", json={"query": "dentists"}).json()
+    wait_for(client, f"/api/searches/{again['id']}", lambda s: s["status"] in ("done", "error"))
+    assert len(PLACES_STATE["calls"]) >= 1 and len(OSM_STATE["overpass"]) == 1
+
+
+@pytest.mark.parametrize("location,mode,phrase", [
+    ("Nowhereville", "ok", "Could not find a place"),
+    ("Texas", "ok", "too large an area"),
+    ("Houston, Texas", "busy", "busy right now"),
+    ("Houston, Texas", "empty", "lists no"),
+])
+def test_free_search_problems_are_explained(client, location, mode, phrase):
+    OSM_STATE["mode"] = mode
+    search = client.post("/api/searches", json={"query": "dentists", "location": location}).json()
+    done = wait_for(client, f"/api/searches/{search['id']}", lambda s: s["status"] in ("done", "error"))
+    assert done["status"] == "error" and phrase in done["error"], done
+
+
+def test_free_search_falls_back_to_mirror_and_widens_an_address(client):
+    OSM_STATE["mode"] = "main_busy"
+    search = client.post("/api/searches", json={"query": "dentists", "location": "1200 Main St, Houston"}).json()
+    done = wait_for(client, f"/api/searches/{search['id']}", lambda s: s["status"] in ("done", "error"))
+    assert done["status"] == "done" and done["found"] == 3
+    assert [c["host"] for c in OSM_STATE["overpass"]] == ["overpass-api.de", "overpass.private.coffee"]
+    assert "(29.71005,-95.40005,29.79005,-95.32005)" in OSM_STATE["overpass"][1]["query"]
 
 
 def test_full_search_flow(client):

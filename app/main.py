@@ -130,8 +130,8 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         query = body.query.strip()
         if not query:
             raise HTTPException(400, "Type what kind of business to look for.")
-        if not config.get_secret("google_api_key"):
-            raise HTTPException(400, "Add your Google Places key in Settings before searching.")
+        if not config.get_secret("google_api_key") and not body.location.strip():
+            raise HTTPException(400, "The free search needs a place. Type a city or district in the \"Where?\" box.")
         search = db.create_search(query, body.location.strip(), body.max_results)
         jobs.queue_search(search["id"])
         return search

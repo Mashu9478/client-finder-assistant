@@ -8,7 +8,9 @@ never leave it.
 your lead list:
 
 - Type a kind of business and a place, for example *dentists* in *Houston, Texas*.
-- The app finds matching businesses through Google Places.
+- The app finds matching businesses, either through the free OpenStreetMap
+  directory (no key, no card) or through Google Places (fuller results, needs
+  a key).
 - It reads each business's public website and lists what could be improved:
   slow loading, no mobile layout, weak Google visibility, outdated build, no
   enquiry form, no online booking, no chat, no visitor tracking, broken links,
@@ -34,10 +36,36 @@ boards (stage 4).
 3. **Start it.** Double-click `start.bat`. The first run takes a minute or two
    while it sets itself up. A black window stays open, and the app opens in
    its own window. Close the black window to stop the app.
-4. **Add your Google Places key.** In the app, open **Settings**, paste the
-   key, press **Save**, then **Test Google key**.
+4. **Search.** The app works straight away with the free directory. A Google
+   Places key is optional; see below.
 
-### Getting a Google Places key
+### Free search or Google search
+
+| | Free directory (OpenStreetMap) | Google Places |
+|---|---|---|
+| Cost | Free, no key, no card | Paid per search; needs a card on file |
+| Coverage | Fewer businesses; patchy outside big cities | Most businesses |
+| Phone and website | Often missing | Usually present |
+| Ratings and reviews | None | Yes |
+| Place needed | Yes, a city or district every time | Optional |
+
+The app uses the free directory until you save a Google key in Settings, then
+switches to Google automatically.
+
+Notes on the free directory:
+
+- Use plain words: *dentists*, *plumbers*, *restaurants*, *hotels*, *lawyers*,
+  *real estate agents*, *gyms*, *salons*, *car repair*.
+- Name a city, town or district. A whole state or country is refused as too
+  large.
+- "None listed" means the directory has no website on record. The business may
+  still have one, so search for it before you pitch "you have no website".
+- It runs on volunteer-funded public servers. Keep searches occasional; if it
+  says it is busy, wait a minute.
+- Business data © OpenStreetMap contributors, available under the Open
+  Database License: <https://www.openstreetmap.org/copyright>
+
+### Getting a Google Places key (optional)
 
 1. Sign in at <https://console.cloud.google.com/> and create a project.
 2. Turn on billing for the project (Google requires a payment card).
@@ -116,6 +144,8 @@ database, and prefer the contact details published on the business's own site.
 |---|---|
 | "Python is not installed" | Install Python and tick **Add python.exe to PATH**, then run `start.bat` again. |
 | The Microsoft Store opens when you start the app | Windows is offering its own Python. Install Python from python.org instead. |
+| "The free business directory is busy" | Wait a minute and search again. |
+| "The free directory lists no …" | Use a simpler word or a bigger nearby city. |
 | "Google rejected the API key" | Copy the key again in full into Settings. |
 | "Places API (New) is not switched on" | Enable **Places API (New)** in Google Cloud, wait a minute, retry. |
 | Many leads say "Could not read site" | Check your internet connection, then press **Re-audit** on a lead. |
@@ -129,6 +159,7 @@ build step.
 ```
 app/main.py      local web server and routes
 app/places.py    Google Places Text Search client
+app/osm.py       free search: Nominatim + Overpass (OpenStreetMap)
 app/audit.py     website audit, issues, ideas, score
 app/contacts.py  public email / phone / social extraction
 app/jobs.py      background searches and audits

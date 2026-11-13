@@ -652,6 +652,8 @@ def build_ideas(issues: list[dict[str, str]], lead: dict[str, Any] | None = None
     ideas: list[dict[str, str]] = []
     lead = lead or {}
 
+    if "no_website_listed" in codes:
+        ideas.append(make_idea("website", "A website, if they truly have none", "Search for the business first. If nothing turns up, offer a fast, mobile-first site with services, reviews and an enquiry form."))
     if "no_website" in codes or "social_only" in codes:
         ideas.append(make_idea("website", "Build their first proper website", "A fast, mobile-first site with services, prices, reviews and an enquiry form, so they stop relying on a listing they do not control."))
     if codes & {"site_down", "site_error"}:
@@ -676,7 +678,7 @@ def build_ideas(issues: list[dict[str, str]], lead: dict[str, Any] | None = None
     reviews = lead.get("reviews") or 0
     if rating and rating >= 4.3 and reviews >= 30:
         ideas.append(make_idea("website", "Show off their reviews", f"They have {reviews} Google reviews averaging {rating}. Feature them on the site to win trust faster."))
-    elif lead.get("reviews") is not None and reviews < 20 and not codes & {"no_website", "social_only", "site_down", "site_error"}:
+    elif lead.get("reviews") is not None and reviews < 20 and not codes & {"no_website", "no_website_listed", "social_only", "site_down", "site_error"}:
         ideas.append(make_idea("ai", "Automatic review requests", "Send customers a review request after each job to build up their Google rating."))
     return ideas
 
@@ -706,6 +708,13 @@ def result_no_website(lead: dict[str, Any] | None = None, platform: str | None =
             f"The business sends people to {platform} instead of its own website, so it does not control how it appears or show up well in Google.",
         )]
         score = 80
+    elif (lead or {}).get("source") == "openstreetmap":
+        # OpenStreetMap often leaves the website blank even when a business has one.
+        issues = [make_issue(
+            "no_website_listed", "medium", "No website listed (check first)",
+            "The free directory shows no website for this business. That directory is often incomplete, so search for them online before assuming they have none.",
+        )]
+        score = 45
     else:
         issues = [make_issue(
             "no_website", "high", "No website",
