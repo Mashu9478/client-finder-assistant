@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -11,7 +12,7 @@ import time
 import urllib.request
 import webbrowser
 
-from app import config
+from app import __version__, config
 
 URL = f"http://{config.HOST}:{config.PORT}"
 
@@ -61,8 +62,23 @@ def open_window() -> None:
     webbrowser.open(URL)
 
 
+def running_version() -> str:
+    """Version of the copy already answering on the port ("" if it cannot say)."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(URL + "/api/version", timeout=2) as resp:
+            return str(json.loads(resp.read().decode("utf-8")).get("version", ""))
+    except (OSError, ValueError):
+        return ""
+
+
 def main() -> None:
     if already_running():
+        if running_version() != __version__:
+            print("An older copy of Client Finder is still running.")
+            print("Close its black window (or restart your PC), then run start.bat again.")
+            input("Press Enter to close this window...")
+            return
         print("Client Finder is already running. Opening its window...")
         open_window()
         return

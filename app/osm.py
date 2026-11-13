@@ -181,7 +181,11 @@ CATEGORY_TAGS: dict[str, list[tuple[str, str]]] = {
     "bicycle": [("shop", "bicycle")],
     "toy": [("shop", "toys")],
     "gift": [("shop", "gift")],
-    "cosmetic": [("shop", "cosmetics")],
+    "cosmetic": [("shop", "cosmetics"), ("shop", "beauty")],
+    "makeup": [("shop", "cosmetics"), ("shop", "beauty")],
+    "make-up": [("shop", "cosmetics"), ("shop", "beauty")],
+    "make up": [("shop", "cosmetics"), ("shop", "beauty")],
+    "perfume": [("shop", "perfumery")],
     "funeral": [("shop", "funeral_directors")],
     "event": [("amenity", "events_venue")],
     "wedding": [("amenity", "events_venue"), ("shop", "wedding")],
@@ -204,6 +208,10 @@ def _singular(word: str) -> str:
     return word
 
 
+FILLER_WORDS = {
+    "business", "shop", "store", "company", "service", "firm", "place", "local", "best", "near", "me", "the", "in",
+}
+
 # Keywords that are word beginnings ("veterinar" covers veterinary and veterinarian).
 STEMS = {
     "veterinar", "physio", "chiropract", "psycholog", "landscap", "consult", "jewel",
@@ -214,7 +222,8 @@ STEMS = {
 def tags_for(query: str) -> tuple[list[tuple[str, str]], str]:
     """Return (OpenStreetMap tag filters, the cleaned singular phrase) for what was typed."""
     cleaned = _clean(query)
-    words = cleaned.split()
+    # Words that describe any business add nothing: "makeup businesses" means "makeup".
+    words = [w for w in cleaned.split() if _singular(w) not in FILLER_WORDS] or cleaned.split()
     if words:
         words[-1] = _singular(words[-1])
     phrase = " ".join(words)

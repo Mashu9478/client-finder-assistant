@@ -274,3 +274,8 @@ def test_interrupted_work_recovers_on_restart(transport):
         assert client.get(f"/api/searches/{search['id']}").json()["status"] == "error"
         done = wait_for(client, f"/api/leads/{lead['id']}", lambda l: l["audit_status"] == "done")
         assert done["opportunity_score"] is not None
+
+
+def test_version_endpoint(client):
+    from app import __version__
+    assert client.get("/api/version").json() == {"version": __version__}

@@ -96,6 +96,10 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         detail = "Please check what was entered. " + "; ".join(problems[:3])
         return JSONResponse({"detail": detail}, status_code=422)
 
+    @app.get("/api/version")
+    async def version() -> dict[str, str]:
+        return {"version": __version__}
+
     # ---------------------------------------------------------- settings
 
     @app.get("/api/settings")
