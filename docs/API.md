@@ -86,7 +86,16 @@ Everything above plus:
       }
     ],
     "social": {"facebook": "https://facebook.com/brightsmile"},
-    "phones_found": ["+1 713-555-0142"]
+    "phones_found": ["+1 713-555-0142"],
+    "profile": {
+      "title": "Bright Smile Dental | Family dentist in Houston",
+      "description": "Friendly family dentist in Houston.",
+      "h1": "Family dentist in Houston",
+      "headings": ["General dentistry", "Teeth whitening"],
+      "nav": ["Treatments", "Our team", "Fees", "Contact"],
+      "og_image": "https://brightsmile.example/img/team.jpg",
+      "brand_colours": ["#1b6ca8", "#e4572e"]
+    }
   }
 }
 ```
@@ -123,10 +132,17 @@ The detail form also carries the report, or `null`:
   "report": {
     "generated_at": "2026-11-13T20:45:00Z",
     "pdf_url": "/api/leads/12/report.pdf",
-    "image_url": "/api/leads/12/concept.png"
+    "image_url": "/api/leads/12/concept.png",
+    "designer": "claude",
+    "note": null
   }
 }
 ```
+
+- `designer`: `claude` (a page designed for this business by the Claude API)
+  or `builtin` (one of the built-in layouts, in the business's colours).
+- `note`: a sentence to show as a warning, for example why Claude's design
+  was not used. Usually `null`.
 
 - `pdf_url` downloads the PDF (add `?inline=true` to open it in a tab).
 - `image_url` shows the concept picture (add `?download=true` to download
@@ -138,6 +154,9 @@ The detail form also carries the report, or `null`:
 - `audit.error` is a sentence when the site could not be read; `issues` may
   then be short or empty.
 - `load_ms`, `page_kb`, `platform`, `pagespeed_mobile` can be `null`.
+- `profile` (the site's own wording and colours, used for the report and
+  concept) is absent on audits made before version 0.5 and when the site
+  could not be read.
 
 ### Search
 
@@ -205,7 +224,7 @@ API keys are write-only: the server never returns them, only `has_*_key`.
 | PATCH | `/api/leads/{id}` | any of `status`, `notes`, `email_subject`, `email_body` | Lead detail form. Sending `email_subject` / `email_body` saves the user's edits to the draft (and creates a `manual` draft if there was none). |
 | POST | `/api/leads/{id}/email` | — | Lead detail form with `email` filled in. Writes (or rewrites) the outreach email from the audit's issues and ideas and saves it. Can take up to a minute. 409 while the website check is still running or when there are no findings to write about; 400 when the user's name is missing from Settings. |
 | DELETE | `/api/leads/{id}/email` | — | HTTP 204. Discards the saved draft. |
-| POST | `/api/leads/{id}/report` | — | Lead detail form with `report` filled in. Creates (or recreates) the PDF report and the homepage concept picture. Takes 5–30 seconds. 409 while the website check is running or when the site could not be read; 400 when the user's name is missing from Settings; 500 with a `detail` sentence if the PDF could not be made (for example no Edge or Chrome installed). |
+| POST | `/api/leads/{id}/report` | — | Lead detail form with `report` filled in. Creates (or recreates) the PDF report and the homepage concept picture; each call produces a different design. Takes 5–30 seconds, or two to three minutes when Claude designs the page. 409 while the website check is running or when the site could not be read; 400 when the user's name is missing from Settings; 500 with a `detail` sentence if the PDF could not be made (for example no Edge or Chrome installed). |
 | GET | `/api/leads/{id}/report.pdf` | `inline` (`true`) | The PDF file. 404 if none exists. |
 | GET | `/api/leads/{id}/concept.png` | `download` (`true`) | The concept picture (1440×1800 PNG). 404 if none exists. |
 | DELETE | `/api/leads/{id}/report` | — | HTTP 204. Removes the report and picture. |

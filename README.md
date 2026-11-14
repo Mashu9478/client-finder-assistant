@@ -142,21 +142,47 @@ Before you send:
 
 ## Reports and concept pictures
 
-The PDF groups findings into areas: security and trust, speed, mobile
-experience, design and technology, Google visibility, turning visitors into
-customers, measurement, and upkeep. It also lists what the site already does
-well, which makes the rest more believable.
+Neither follows one fixed pattern. Each is built around the business it is
+for.
 
-The concept picture is a mock-up of a modern homepage that shows the upgrades
-the report recommends, such as online booking, an enquiry form, tap-to-call
-and chat. It uses only the business's name, type, phone, address and, when it
-is good, its rating. The wording and layout are samples. It is not a redesign
-of their actual pages, and it is labelled "Concept only" so nobody mistakes it
-for one.
+**The report** changes with what the business needs:
+
+- It opens with what was looked at, what the site already does well, and
+  where the gains are, plus one line on why a website matters for that kind
+  of business.
+- A weak site gets a "Where to start" block with its three most important
+  points and a staged plan (quick wins, next steps, larger projects). A sound
+  site gets neither, and leads with what is already working.
+- Findings are grouped by area, worst first.
+- The cover and colours follow the business's own brand colour, and the cover
+  layout differs from business to business.
+
+**The concept picture** is a homepage designed for that business:
+
+- During the website check the app reads the business's own menu labels,
+  headline, main headings and brand colours, and notes the share photo it
+  publishes for link previews. The concept uses those, so it looks like their
+  site, redone.
+- **With a Claude key saved**, Claude designs a one-off page for each
+  business, in a different visual direction each time. This takes two to
+  three minutes and costs more on your Claude account than an email does.
+- **Without a key**, the app uses one of four built-in layouts in the
+  business's colours and wording.
+- **Try another design** makes a different one.
+
+What it never does: copy their logo, invent testimonials, prices, awards or
+opening hours, or present itself as finished. Every picture carries a
+"Concept only" label so nobody mistakes it for the business's real site.
+
+A page designed by Claude is treated as untrusted. Before it is photographed
+the app strips anything that could run or load from outside, and the browser
+that photographs it has the network blocked.
+
+Leads you found before this version have no saved colours or wording. Press
+**Re-audit website** on a lead first to collect them.
 
 Making the PDF and picture uses Microsoft Edge or Google Chrome, working
-invisibly on your PC. Nothing is uploaded. The files are kept in
-`data/reports/`.
+invisibly on your PC. The files are kept in `data/reports/`.
 
 If the email was written before the report existed, press **Write again** so
 the email mentions the attachments.
@@ -216,6 +242,7 @@ folder into the new folder.
 | "Places API (New) is not switched on" | Enable **Places API (New)** in Google Cloud, wait a minute, retry. |
 | Many leads say "Could not read site" | Check your internet connection, then press **Re-audit** on a lead. |
 | "Making the PDF needs Microsoft Edge or Google Chrome" | Install either browser, then press Create report again. |
+| "One of the built-in designs was used instead" | Claude could not design that one; the note says why. Fix it (key, credit) and press Try another design. |
 | The app window does not open | Open <http://127.0.0.1:8765> in Chrome or Edge while the black window is running. |
 
 ## For developers
@@ -230,7 +257,9 @@ app/osm.py       free search: Nominatim + Overpass (OpenStreetMap)
 app/audit.py     website audit, issues, ideas, score
 app/contacts.py  public email / phone / social extraction
 app/emailer.py   outreach email per lead (Claude API or built-in template)
+app/profile.py   a site's own wording and brand colours
 app/report.py    report and concept data built from an audit
+app/designer.py  Claude-designed concept page, safety filter, report opening
 app/render.py    HTML to PDF and PNG through headless Edge or Chrome
 app/report_templates/  the report and concept layouts (Jinja2)
 app/jobs.py      background searches and audits

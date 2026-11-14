@@ -173,3 +173,30 @@ def test_search_words_map_to_directory_tags():
     assert tags_for("Makeup Businesses") == ([("shop", "cosmetics"), ("shop", "beauty")], "makeup")
     assert tags_for("law firms")[0] == [("office", "lawyer")]             # filler words do not hide a known phrase
     assert tags_for("shops")[1] == "shop"                                  # nothing left? keep what was typed
+
+
+def test_site_profile_reads_the_business_own_words_and_colours(transport):
+    from app.profile import make_palette, pick_brand_colours, colour_counts
+    result = run(transport, "https://good.example/")
+    profile = result["audit"]["profile"]
+    assert profile["title"].startswith("Bright Smile Dental")
+    assert profile["h1"] == "Family dentist in Houston"
+    assert profile["nav"] == ["Treatments", "Our team", "Fees", "Contact"]            # "Home" says nothing
+    assert profile["headings"] == ["General dentistry", "Teeth whitening", "Emergency appointments"]   # "Welcome" dropped
+    assert profile["og_image"] == "https://good.example/img/team.jpg"
+    # Blue is used most across the page and its own stylesheet; the orange button colour is second
+    assert profile["brand_colours"] == ["#1b6ca8", "#e4572e"]
+    assert set(profile) == {"title", "description", "h1", "headings", "nav", "og_image", "brand_colours"}
+    assert "broken_links" not in codes(result)                                          # the new menu links all work
+
+    old = run(transport, "http://old.example")["audit"]["profile"]
+    assert old["brand_colours"] == [] and old["nav"] == ["Old offers", "Prices"] and old["og_image"] == ""
+
+    # Greys, near-white and near-black are never a brand colour; shades of one hue count once
+    counts = colour_counts("#fff #ffffff #000 #333 #f5f5f5 #0a58ca #0a58ca #0b5ed7 rgb(220, 53, 69)")
+    assert pick_brand_colours(counts) == ["#0a58ca", "#dc3545"]
+    assert pick_brand_colours(counts, "#198754")[0] == "#198754"                        # the site's declared theme colour wins
+    palette = make_palette("#ffd400")                                                   # a bright yellow is deepened so white text stays readable
+    assert set(palette) == {"primary", "dark", "tint", "accent"} and palette["primary"] != "#ffd400"
+    from app.profile import _hls
+    assert _hls(palette["primary"])[1] <= 0.43 and _hls(palette["dark"])[1] < _hls(palette["primary"])[1] and _hls(palette["tint"])[1] > 0.95

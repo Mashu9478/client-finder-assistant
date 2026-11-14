@@ -64,6 +64,9 @@ def _run_browser(browser: str, args: list[str], output: Path) -> None:
         "--no-default-browser-check",
         "--disable-extensions",
         "--hide-scrollbars",
+        # The pages are self-contained, so nothing may be fetched. (Scripts are stopped by the
+        # content policy written into each page; switching them off here breaks the capture itself.)
+        "--host-resolver-rules=MAP * ~NOTFOUND",
         f"--user-data-dir={profile}",
     ]
     if hasattr(os, "geteuid") and os.geteuid() == 0:
@@ -105,46 +108,94 @@ def html_to_png(browser: str, html_file: Path, png_file: Path, size: tuple[int, 
     ], png_file)
 
 
-def render_templates(context: dict[str, Any]) -> tuple[str, str]:
-    """Return (report HTML, concept HTML) for a context from report.build_context."""
+CONTENT_POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+
+
+def _environment() -> Any:
     try:
         import jinja2
     except ImportError as exc:  # an update added this library; start.bat installs it
         raise RenderError("One of the app's parts is missing. Close the app, run update.bat, then start it again.") from exc
-    env = jinja2.Environment(
+    return jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(TEMPLATE_DIR)),
         autoescape=True,
         trim_blocks=True,
         lstrip_blocks=True,
     )
+
+
+def _with_policy(html: str) -> str:
+    """Add a content policy so a page can only use what is written inside it."""
+    if "Content-Security-Policy" in html:
+        return html
+    tag = f'<meta http-equiv="Content-Security-Policy" content="{CONTENT_POLICY}">'
+    lower = html.lower()
+    at = lower.find("<head>")
+    if at != -1:
+        return html[: at + 6] + tag + html[at + 6:]
+    return tag + html
+
+
+def _render(template: str, context: dict[str, Any]) -> str:
+    import jinja2
     try:
-        report_html = env.get_template("report.html.j2").render(**context)
-        concept_html = env.get_template("concept.html.j2").render(**context)
+        return _with_policy(_environment().get_template(template).render(**context))
     except jinja2.TemplateError as exc:
         raise RenderError(f"The report layout could not be filled in ({type(exc).__name__}).") from exc
-    return report_html, concept_html
 
 
-def make_report_files(context: dict[str, Any], out_dir: Path) -> dict[str, Path]:
-    """Write report.pdf and concept.png into ``out_dir``. Blocking: call from a worker thread."""
+def render_concept(context: dict[str, Any]) -> str:
+    """The built-in homepage concept for a context from report.build_context."""
+    return _render("concept.html.j2", context)
+
+
+def render_report(context: dict[str, Any]) -> str:
+    return _render("report.html.j2", context)
+
+
+def render_templates(context: dict[str, Any]) -> tuple[str, str]:
+    """Return (report HTML, concept HTML). Kept for tests and tools."""
+    return render_report(context), render_concept(context)
+
+
+def make_report_files(context: dict[str, Any], out_dir: Path, concept_html: str | None = None) -> dict[str, Any]:
+    """Write report.pdf and concept.png into ``out_dir``. Blocking: call from a worker thread.
+
+    ``concept_html`` is a ready-made concept page (for example one designed by
+    Claude). If it cannot be photographed, the built-in layout is used instead
+    and the result says so.
+    """
+    import base64
+
     browser = find_browser()
     if not browser:
         raise RenderError("Making the PDF needs Microsoft Edge or Google Chrome. Install one of them, then try again.")
-    report_html, concept_html = render_templates(context)
     out_dir.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="cfa-report-"))
+    used_custom = False
     try:
-        report_file = work / "report.html"
-        concept_file = work / "concept.html"
-        report_file.write_text(report_html, encoding="utf-8")
-        concept_file.write_text(concept_html, encoding="utf-8")
-        # Render into the work folder first, so a failure never leaves half a report behind.
-        pdf_tmp, png_tmp = work / "report.pdf", work / "concept.png"
+        # 1. The concept picture. Render into the work folder first, so a failure never leaves half a report behind.
+        concept_file, png_tmp = work / "concept.html", work / "concept.png"
+        if concept_html:
+            try:
+                concept_file.write_text(_with_policy(concept_html), encoding="utf-8")
+                html_to_png(browser, concept_file, png_tmp)
+                used_custom = True
+            except RenderError:
+                used_custom = False
+        if not used_custom:
+            concept_file.write_text(render_concept(context), encoding="utf-8")
+            html_to_png(browser, concept_file, png_tmp)
+
+        # 2. The report, with the picture inside it.
+        picture = "data:image/png;base64," + base64.b64encode(png_tmp.read_bytes()).decode("ascii")
+        report_file, pdf_tmp = work / "report.html", work / "report.pdf"
+        report_file.write_text(render_report({**context, "concept_image": picture}), encoding="utf-8")
         html_to_pdf(browser, report_file, pdf_tmp)
-        html_to_png(browser, concept_file, png_tmp)
+
         pdf_out, png_out = out_dir / "report.pdf", out_dir / "concept.png"
         shutil.move(str(pdf_tmp), str(pdf_out))
         shutil.move(str(png_tmp), str(png_out))
-        return {"pdf": pdf_out, "png": png_out}
+        return {"pdf": pdf_out, "png": png_out, "used_custom_concept": used_custom}
     finally:
         shutil.rmtree(work, ignore_errors=True)

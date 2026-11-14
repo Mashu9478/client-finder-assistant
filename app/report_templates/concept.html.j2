@@ -1,18 +1,56 @@
 {#
   Homepage concept as a standalone picture: exactly 1440 x 1800 px.
   Screenshot with --window-size=1440,1800 --hide-scrollbars.
+
+  concept.variant (0-3) picks one of four built-in layouts:
+    0  _concept_v0.html.j2  split hero with a picture panel, service cards
+    1  _concept_v1.html.j2  full-bleed hero with the booking card in it, service rows
+    2  _concept_v2.html.j2  editorial: serif masthead, wide picture strip, ruled columns
+    3  _concept_v3.html.j2  centred hero, floating enquiry bar, tabbed services
+
+  Shared pieces: _concept_base.html.j2 (CSS) and _concept_ui.html.j2 (macros).
+  The values worked out below are visible inside the included layout.
+  No JavaScript and no external resources; the photo, when there is one, is a data: URI.
 #}
+{% set cx = concept or {} %}
+{% set cxf = cx.features or {} %}
+{% set cx_variant = cx.variant|default(0, true)|int(0) %}
+{% if cx_variant not in [0, 1, 2, 3] %}{% set cx_variant = 0 %}{% endif %}
+{% set cx_photo = cx.hero_image if (cx.hero_image is string and cx.hero_image.startswith('data:image/')) else '' %}
+{% set cx_name = cx.business_name or '' %}
+{% set cx_nav = (cx.nav or cx.sample_services or [])[:4] %}
+{% set cx_services = (cx.services or cx.sample_services or [])[:3] %}
+{% set cx_headline = cx.headline or cx_name %}
+{# Headline size steps down as the real wording gets longer. #}
+{% set cx_hsize = 'xl' if cx_headline|length <= 26 else ('l' if cx_headline|length <= 46 else 'm') %}
+{% if cx.subline %}
+  {% set cx_sub = cx.subline %}
+{% elif cxf.booking %}
+  {% set cx_sub = 'Tell us what you need and pick a time that suits you. Booking is open online at any hour.' %}
+{% elif cxf.enquiry_form %}
+  {% set cx_sub = 'Tell us what you need and we will get back to you. You can send a message at any hour.' %}
+{% else %}
+  {% set cx_sub = 'Tell us what you need and we will take it from there.' %}
+{% endif %}
+{% set cx_sub_long = cx_sub|length > 110 %}
+{% set cx_cta = 'Book online' if cxf.booking else 'Get in touch' %}
+{% set cx_has_rating = cx.rating is number and cx.rating > 0 %}
+{% set cx_call = cx.phone or 'Call us' %}
+{# Neutral one-liners under each service name; they describe what the real text would cover. #}
+{% set cx_lines = [
+  'A short, plain summary of what this covers and who it is for.',
+  'What is included, how long it takes and how to arrange it.',
+  'When to choose this and what to expect on the day.',
+] %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=1440">
-<title>Homepage concept{% if concept.business_name %}: {{ concept.business_name }}{% endif %}</title>
-<style>
-  html, body { margin: 0; padding: 0; width: 1440px; height: 1800px; overflow: hidden; background: #fff; }
-</style>
+<title>Homepage concept{% if cx_name %}: {{ cx_name }}{% endif %}</title>
+{% include "_concept_base.html.j2" %}
 </head>
 <body>
-{% include "_concept.html.j2" %}
+{% include "_concept_v" ~ cx_variant ~ ".html.j2" %}
 </body>
 </html>

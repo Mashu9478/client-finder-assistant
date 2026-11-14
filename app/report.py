@@ -19,6 +19,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .contacts import registrable_domain
+from .profile import make_palette
+
+CONCEPT_VARIANTS = 4   # built-in homepage layouts
+COVER_VARIANTS = 3     # report cover treatments
 
 # Which part of the site each finding belongs to, in the order the report shows them.
 AREAS: list[tuple[str, str, str]] = [
@@ -109,6 +113,25 @@ PASS_LABELS = [
     ("no_favicon", "Site icon is set"),
 ]
 
+# The same passed checks as short clauses for a sentence, most reassuring first.
+PASS_CLAUSES = [
+    ("Secure connection (HTTPS)", "the connection is secure"),
+    ("Layout adapts to phone screens", "the layout adapts to phones"),
+    ("Server responds quickly", "the server responds quickly"),
+    ("Enquiry form is present", "visitors can send an enquiry"),
+    ("Online booking is available", "customers can book online"),
+    ("Phone number is tappable", "the phone number can be tapped to call"),
+    ("Visitor tracking is in place", "visitor tracking is in place"),
+    ("Search description is present", "Google has a description to show"),
+    ("Clear main heading", "the page has a clear main heading"),
+    ("Business details labelled for Google", "the business details are labelled for Google"),
+    ("Chat or instant messaging is available", "there is a chat option"),
+    ("Page has a title", "the page has a proper title"),
+    ("Preview shows when the site is shared", "shared links show a preview"),
+    ("Sitemap is published", "a sitemap is published"),
+    ("Site icon is set", "the site icon is set"),
+]
+
 # Owner-facing wording for the audit's upgrade ideas.
 RECOMMENDATION = {
     "A website, if they truly have none": ("A website of your own", "A fast, mobile-first site with your services, reviews and an enquiry form."),
@@ -146,6 +169,48 @@ OWNER_WORDING = {
     ),
 }
 
+# Roughly how much work each fix is, so the plan can start with what is quick.
+EFFORT = {
+    "no_https": "quick", "ssl_error": "quick", "no_compression": "quick", "no_lazy_images": "quick",
+    "old_copyright": "quick", "noindex": "quick", "no_title": "quick", "short_title": "quick",
+    "no_meta_description": "quick", "no_h1": "quick", "images_no_alt": "quick", "no_structured_data": "quick",
+    "no_og": "quick", "no_sitemap": "quick", "no_click_to_call": "quick", "no_analytics": "quick",
+    "broken_links": "quick", "no_favicon": "quick",
+    "slow_response": "next", "pagespeed_low": "next", "many_scripts": "next", "old_wordpress": "next",
+    "old_jquery": "next", "no_contact_form": "next", "no_booking": "next", "no_chat": "next", "site_error": "next",
+    "no_viewport": "project", "old_markup": "project", "site_builder": "project", "heavy_html": "project",
+    "js_rendered": "project", "no_website": "project", "no_website_listed": "project", "social_only": "project",
+    "site_down": "project",
+}
+PLAN_STAGES = [
+    ("quick", "Quick wins", "Small changes that can be made in days."),
+    ("next", "Next steps", "Additions that take a week or two."),
+    ("project", "Larger projects", "Bigger pieces of work, worth planning properly."),
+]
+
+# One sentence on why a website matters for this kind of business. No statistics: only what is plainly true.
+CATEGORY_INSIGHT: list[tuple[tuple[str, ...], str]] = [
+    (("plumb", "electric", "roof", "hvac", "heating", "locksmith", "builder", "construct", "carpent", "paint", "pest", "clean"),
+     "People usually look for this kind of service on their phone when something needs fixing now, so a fast page and a number they can tap matter more than anything else."),
+    (("dent", "orthodont", "doctor", "clinic", "medical", "physio", "chiropract", "optic", "vet", "veterinar", "health", "therap"),
+     "Choosing a healthcare provider is a matter of trust, and people tend to compare a few websites before they call, so clear information and easy booking count."),
+    (("restaurant", "cafe", "coffee", "bakery", "bar", "pub", "food", "takeaway"),
+     "Diners often decide where to go from their phone shortly before they set out, so the menu, opening hours and booking need to be one tap away."),
+    (("hotel", "guest", "hostel", "motel"),
+     "Every guest who books direct saves the commission a booking site would take, so the site has to feel as fast and trustworthy as those sites do."),
+    (("hair", "salon", "barber", "beauty", "spa", "nail", "cosmetic", "massage", "tattoo", "gym", "fitness", "yoga", "dance"),
+     "Customers like to book outside opening hours, so online booking and a site that looks good on a phone bring in appointments that would otherwise be missed."),
+    (("lawyer", "attorney", "law", "solicitor", "notary", "account", "tax", "financ", "insur", "architect", "consult", "estate", "realt", "property"),
+     "For a professional firm the website is often the first impression, and people judge competence from it, so a current, clear site matters."),
+    (("car", "auto", "garage", "mechanic", "tyre", "tire"),
+     "Drivers looking for a garage usually want to call or book straight away, so the phone number and booking need to be obvious on a phone."),
+    (("school", "academy", "tutor", "kindergarten", "nursery", "college", "driving", "course"),
+     "Parents and students research carefully before they enrol, so clear course information and an easy way to ask questions matter."),
+    (("florist", "flower", "shop", "store", "boutique", "jewel", "cloth", "furniture", "book", "pet", "gift"),
+     "Shoppers often check a shop's website before visiting, so opening hours, what is in stock and a way to order online all help."),
+]
+DEFAULT_INSIGHT = "Most customers now look a business up online before they get in touch, so the website is often the first impression."
+
 SERVICE_LABEL = {"website": "Website", "app": "App", "ai": "AI", "data": "Data"}
 SEVERITY_LABEL = {"high": "High priority", "medium": "Worth fixing", "low": "Nice to have"}
 
@@ -164,7 +229,7 @@ PALETTES = [
 CONCEPT_COPY: list[tuple[tuple[str, ...], str, tuple[str, str, str], int]] = [
     (("dent", "orthodont"), "Dental care that fits around you", ("Check-ups", "Whitening", "Emergency care"), 0),
     (("doctor", "clinic", "medical", "physio", "chiropract", "health"), "Care you can book in a minute", ("Consultations", "Treatments", "Follow-up care"), 1),
-    (("vet",), "Kind, expert care for your pet", ("Check-ups", "Vaccinations", "Surgery"), 5),
+    (("vet", "veterinar"), "Kind, expert care for your pet", ("Check-ups", "Vaccinations", "Surgery"), 5),
     (("lawyer", "attorney", "law", "solicitor", "notary"), "Clear legal advice when it matters", ("Consultations", "Contracts", "Disputes"), 6),
     (("account", "tax", "financ"), "Your numbers, handled", ("Bookkeeping", "Tax returns", "Advice"), 6),
     (("estate", "realt", "property"), "Find the right place, faster", ("Buying", "Selling", "Lettings"), 1),
@@ -204,16 +269,61 @@ def _initials(name: str) -> str:
 
 def concept_copy(lead: dict[str, Any]) -> tuple[str, list[str], tuple[str, str, str, str]]:
     """Sample headline, sample service names and colours for the concept."""
-    haystack = f"{lead.get('category') or ''} {lead.get('name') or ''}".lower()
-    for keywords, headline, services, palette_index in CONCEPT_COPY:
-        if any(k in haystack for k in keywords):
-            return headline, list(services), PALETTES[palette_index]
+    row = _match_group(CONCEPT_COPY, lead)
+    if row:
+        _keywords, headline, services, palette_index = row
+        return headline, list(services), PALETTES[palette_index]
     digest = hashlib.sha256((lead.get("name") or "").encode("utf-8")).digest()
     return "Everything you need, in one place", ["Our services", "About us", "Get in touch"], PALETTES[digest[0] % len(PALETTES)]
 
 
-def build_context(lead: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
-    """Everything the report and concept templates need for one lead."""
+def _stable_number(text: str) -> int:
+    return int.from_bytes(hashlib.sha256(text.encode("utf-8")).digest()[:4], "big")
+
+
+def _has_keyword(text: str, keyword: str) -> bool:
+    """Keyword at the start of a word; short ones ("bar", "car", "vet") must be the whole word."""
+    if len(keyword) <= 3:
+        return bool(re.search(rf"(?<![a-z]){re.escape(keyword)}s?(?![a-z])", text))
+    return bool(re.search(rf"(?<![a-z]){re.escape(keyword)}", text))
+
+
+def _match_group(table: list[Any], lead: dict[str, Any]) -> Any:
+    """First row of a keyword table that fits the business: by its type first, then by its name."""
+    for text in ((lead.get("category") or "").lower(), (lead.get("name") or "").lower()):
+        if not text:
+            continue
+        for row in table:
+            if any(_has_keyword(text, k) for k in row[0]):
+                return row
+    return None
+
+
+def category_insight(lead: dict[str, Any]) -> str:
+    row = _match_group(CATEGORY_INSIGHT, lead)
+    return row[1] if row else DEFAULT_INSIGHT
+
+
+def _join(items: list[str]) -> str:
+    items = [i for i in items if i]
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def build_context(
+    lead: dict[str, Any],
+    settings: dict[str, Any],
+    variant: int | None = None,
+    hero_image: str | None = None,
+    narrative: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Everything the report and concept templates need for one lead.
+
+    ``variant`` picks the built-in homepage layout (default: fixed per business name).
+    ``hero_image`` is the business's own share image as a data URI, if it has one.
+    ``narrative`` may carry an "intro" and "insight" written for this business.
+    """
     audit = lead.get("audit") or {}
     issues = [i for i in (audit.get("issues") or []) if isinstance(i, dict) and i.get("title")]
     ideas = [i for i in (audit.get("ideas") or []) if isinstance(i, dict) and i.get("title")]
@@ -226,6 +336,8 @@ def build_context(lead: dict[str, Any], settings: dict[str, Any]) -> dict[str, A
         code = issue.get("code") or ""
         owner_title, owner_what = OWNER_WORDING.get(code, (None, None))
         by_area.setdefault(AREA_OF.get(code, "upkeep"), []).append({
+            "code": code,
+            "effort": EFFORT.get(code, "next"),
             "severity": issue.get("severity") or "low",
             "severity_label": SEVERITY_LABEL.get(issue.get("severity") or "low", "Nice to have"),
             "title": owner_title or issue.get("title"),
@@ -259,13 +371,39 @@ def build_context(lead: dict[str, Any], settings: dict[str, Any]) -> dict[str, A
             "passed": passed,
         })
 
+    # What matters most for this business comes first; what is already fine goes last.
+    order = {"urgent": 0, "needs_work": 1, "minor": 2, "good": 3}
+    areas.sort(key=lambda a: order[a["status"]])
+    area_title = {a["key"]: a["title"] for a in areas}
+    all_findings = [dict(f, area=a["title"]) for a in areas for f in a["findings"]]
+    severity_rank = {"high": 0, "medium": 1, "low": 2}
+    ranked = sorted(all_findings, key=lambda f: severity_rank[f["severity"]])
+
+    # Where to start: the three most important points, from different areas where possible
+    priorities: list[dict[str, Any]] = []
+    for finding in ranked:
+        if len(priorities) < 3 and finding["area"] not in {p["area"] for p in priorities}:
+            priorities.append(finding)
+    for finding in ranked:
+        if len(priorities) < 3 and finding not in priorities:
+            priorities.append(finding)
+    priorities.sort(key=lambda f: severity_rank[f["severity"]])
+
+    plan = []
+    for key, title, about in PLAN_STAGES:
+        steps = [{"action": f["fix"], "because": f["title"]} for f in ranked if f["effort"] == key and f["fix"]]
+        if steps:
+            plan.append({"key": key, "title": title, "about": about, "steps": steps[:6], "more": max(0, len(steps) - 6)})
+
+    strengths = [label for a in areas for label in a["passed"]]
+
     counts = {s: sum(1 for i in issues if i.get("severity") == s) for s in ("high", "medium", "low")}
     if not site_read:
         headline = "There is no working website for customers to find." if codes & {"no_website", "social_only", "site_down", "site_error"} \
             else "We could not find a website listed for the business."
     elif counts["high"]:
         n = counts["high"]
-        headline = f"{n} issue{'s' if n != 1 else ''} need{'s' if n == 1 else ''} attention, and each is fixable."
+        headline = "1 issue needs attention, and it is fixable." if n == 1 else f"{n} issues need attention, and each is fixable."
     elif counts["medium"]:
         headline = "The site works, with clear room to win more enquiries."
     elif issues:
@@ -287,23 +425,48 @@ def build_context(lead: dict[str, Any], settings: dict[str, Any]) -> dict[str, A
             "service_label": SERVICE_LABEL.get(idea.get("service") or "website", "Website"),
         })
 
-    # Homepage concept: shows the upgrades this report recommends
-    headline_text, sample_services, palette = concept_copy(lead)
+    # Homepage concept: shows the upgrades this report recommends, in the business's own words and colours
+    headline_text, sample_services, category_palette = concept_copy(lead)
     rating, reviews = lead.get("rating"), lead.get("reviews")
     has_rating = bool(rating and reviews)
     idea_titles = {i["title"] for i in ideas}
     name = (lead.get("name") or "Your business").strip()
+
+    profile = audit.get("profile") or {}
+    brand = [c for c in (profile.get("brand_colours") or []) if isinstance(c, str)]
+    if brand:
+        palette = make_palette(brand[0], brand[1] if len(brand) > 1 else None)
+    else:
+        palette = dict(zip(("primary", "dark", "tint", "accent"), category_palette))
+
+    own_h1 = (profile.get("h1") or "").strip()
+    own_headline = own_h1 if 12 <= len(own_h1) <= 70 and own_h1.lower() != name.lower() else ""
+    own_description = (profile.get("description") or "").strip()
+    own_services = [h for h in (profile.get("headings") or []) if isinstance(h, str)][:3]
+    own_nav = [n for n in (profile.get("nav") or []) if isinstance(n, str)][:4]
+    services = own_services if len(own_services) == 3 else sample_services
+    uses_own_words = bool(own_headline or len(own_services) == 3 or len(own_nav) >= 3)
+
+    seed = _stable_number(name)
+    concept_variant = (seed if variant is None else int(variant)) % CONCEPT_VARIANTS
     concept = {
         "business_name": name,
         "initials": _initials(name),
         "category": lead.get("category") or "",
         "phone": lead.get("phone") or "",
         "address": lead.get("address") or "",
-        "headline": headline_text,
+        "variant": concept_variant,
+        "headline": own_headline or headline_text,
+        "subline": own_description if 30 <= len(own_description) <= 170 else "",
+        "nav": own_nav if len(own_nav) >= 3 else sample_services,
+        "services": services,
+        "services_are_samples": services is sample_services,
+        "hero_image": hero_image or None,
+        "uses_own_words": uses_own_words,
         "sample_services": sample_services,
         "rating": rating if has_rating and float(rating) >= 4.0 else None,
         "reviews": reviews if has_rating and float(rating) >= 4.0 else None,
-        "palette": {"primary": palette[0], "dark": palette[1], "tint": palette[2], "accent": palette[3]},
+        "palette": palette,
         "features": {
             # Always part of a modern local-business homepage
             "enquiry_form": True,
@@ -314,8 +477,38 @@ def build_context(lead: dict[str, Any], settings: dict[str, Any]) -> dict[str, A
             # Only worth featuring when the rating is one to be proud of
             "reviews": has_rating and float(rating) >= 4.0,
         },
-        "label": "Concept only. Sample wording and layout, to show the direction.",
+        "label": (
+            "Concept only. Your own wording in a sample layout, to show the direction."
+            if uses_own_words else "Concept only. Sample wording and layout, to show the direction."
+        ),
     }
+
+    # The opening paragraph: what we looked at, what is already good, and where the gains are
+    site = _site_label(lead.get("website"))
+    if site_read:
+        parts = [f"We looked at {site or 'the website'} on {_pretty_date(audit.get('checked_at'))}."]
+        if strengths:
+            clauses = [clause for label, clause in PASS_CLAUSES if label in strengths][:2]
+            count = f"{len(strengths)} thing{'s' if len(strengths) != 1 else ''}"
+            parts.append(f"It already gets {count} right: {_join(clauses)}." if clauses else f"It already gets {count} right.")
+            if len(strengths) > len(clauses) > 0:
+                parts[-1] = parts[-1][:-1] + (", among others." if len(strengths) > 2 else ".")
+        needy = [a["title"].lower() for a in areas if a["findings"]][:2]
+        if needy:
+            parts.append(f"The biggest gains would come from {_join(needy)}.")
+        intro = " ".join(parts)
+    elif codes & {"site_down", "site_error"}:
+        intro = f"We tried to visit {site or 'the website'} on {_pretty_date(audit.get('checked_at'))} and it did not load. This review explains what that costs and how to put it right."
+    elif "no_website_listed" in codes:
+        intro = f"We looked for a website for {name} and could not find one listed. This review explains what a website would do for the business, with a concept of how it could look."
+    else:
+        intro = f"{name} does not have a website of its own yet. This review explains what one would do for the business, with a concept of how it could look."
+    insight = category_insight(lead)
+    if narrative:
+        if isinstance(narrative.get("intro"), str) and 40 <= len(narrative["intro"]) <= 700:
+            intro = narrative["intro"].strip()
+        if isinstance(narrative.get("insight"), str) and 30 <= len(narrative["insight"]) <= 400:
+            insight = narrative["insight"].strip()
 
     sender_lines = [settings.get("your_name") or "", settings.get("business_name") or ""]
     return {
@@ -342,6 +535,8 @@ def build_context(lead: dict[str, Any], settings: dict[str, Any]) -> dict[str, A
         "summary": {
             "site_read": site_read,
             "headline": headline,
+            "intro": intro,
+            "insight": insight,
             "counts": counts,
             "total_findings": len(issues),
             "checks_passed": sum(len(v) for v in passed_by_area.values()),
@@ -352,9 +547,14 @@ def build_context(lead: dict[str, Any], settings: dict[str, Any]) -> dict[str, A
             "platform": audit.get("platform"),
             "pagespeed_mobile": audit.get("pagespeed_mobile"),
         },
+        "theme": {"palette": palette, "cover_variant": (seed // 7) % COVER_VARIANTS},
+        "priorities": priorities,
+        "plan": plan,
+        "strengths": strengths,
         "areas": areas,
         "recommendations": recommendations,
         "concept": concept,
+        "concept_image": None,   # filled in by the renderer once the picture exists
         "method_note": (
             "This review was produced by an automated check of the business's public web pages on the date shown. "
             "It looks only at what any visitor can see. Automated checks can miss context, so please treat each "

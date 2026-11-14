@@ -22,6 +22,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from . import __version__
+from .profile import extract_profile, finish_profile
 from .contacts import (
     extract_emails,
     extract_phones,
@@ -427,6 +428,7 @@ def analyze_html(html: str, url: str) -> dict[str, Any]:
         "has_flash": has_flash,
         "words": words,
         "js_rendered": words < 40 and len(scripts) > 0,
+        "profile": extract_profile(soup, html, url),
     }
 
 
@@ -853,6 +855,11 @@ async def _audit(client: httpx.AsyncClient, raw_url: str, lead: dict[str, Any] |
     use_psi = bool(pagespeed_key)
     if use_psi:
         side_checks.append(pagespeed_score(client, home_fetch.url, pagespeed_key))
+    # The site's main stylesheet, read only for its brand colours
+    stylesheet_url = home["profile"].get("stylesheet")
+    want_css = bool(stylesheet_url) and allowed(robots, stylesheet_url)
+    if want_css:
+        side_checks.append(fetch_page(client, stylesheet_url, timeout=SMALL_TIMEOUT))
     results = await asyncio.gather(*side_checks) if side_checks else []
 
     link_results = results[:len(sample)]
@@ -863,6 +870,9 @@ async def _audit(client: httpx.AsyncClient, raw_url: str, lead: dict[str, Any] |
     if need_sitemap:
         has_sitemap = rest.pop(0) == 200
     pagespeed = rest.pop(0) if use_psi else None
+    css_fetch = rest.pop(0) if want_css else None
+    css_text = css_fetch.text if (css_fetch is not None and css_fetch.ok and css_fetch.status == 200) else ""
+    profile = finish_profile(home["profile"], css_text)
     broken = [u for u, status in zip(sample, link_results) if status in (404, 410)]
 
     issues = build_issues(
@@ -907,6 +917,7 @@ async def _audit(client: httpx.AsyncClient, raw_url: str, lead: dict[str, Any] |
             "ideas": ideas,
             "social": social,
             "phones_found": phones[:3],
+            "profile": profile,
         },
     }
 

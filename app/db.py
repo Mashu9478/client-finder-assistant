@@ -91,6 +91,9 @@ ADDED_COLUMNS = {
     "email_generated_at": "TEXT",
     "email_edited": "INTEGER NOT NULL DEFAULT 0",
     "report_generated_at": "TEXT",
+    "report_count": "INTEGER NOT NULL DEFAULT 0",
+    "report_designer": "TEXT",
+    "report_note": "TEXT",
 }
 
 
@@ -239,6 +242,8 @@ def _lead_row(row: sqlite3.Row, detail: bool = False) -> dict[str, Any]:
                 "generated_at": row["report_generated_at"],
                 "pdf_url": f"/api/leads/{row['id']}/report.pdf",
                 "image_url": f"/api/leads/{row['id']}/concept.png",
+                "designer": row["report_designer"] or "builtin",
+                "note": row["report_note"],
             }
     return lead
 
@@ -399,12 +404,29 @@ def edit_email(lead_id: int, subject: str | None, body: str | None) -> None:
         db.commit()
 
 
-def set_report(lead_id: int, generated: bool) -> None:
+def set_report(lead_id: int, generated: bool, designer: str = "builtin", note: str | None = None) -> None:
     with _lock:
         db = connect()
         now = now_iso()
-        db.execute("UPDATE leads SET report_generated_at=?, updated_at=? WHERE id=?", (now if generated else None, now, lead_id))
+        if generated:
+            db.execute(
+                "UPDATE leads SET report_generated_at=?, report_designer=?, report_note=?, "
+                "report_count=report_count+1, updated_at=? WHERE id=?",
+                (now, designer, note, now, lead_id),
+            )
+        else:
+            db.execute(
+                "UPDATE leads SET report_generated_at=NULL, report_designer=NULL, report_note=NULL, updated_at=? WHERE id=?",
+                (now, lead_id),
+            )
         db.commit()
+
+
+def report_count(lead_id: int) -> int:
+    """How many times a report has been made for this lead (each new one gets a different design)."""
+    with _lock:
+        row = connect().execute("SELECT report_count FROM leads WHERE id = ?", (lead_id,)).fetchone()
+    return int(row["report_count"]) if row else 0
 
 
 def delete_email(lead_id: int) -> None:

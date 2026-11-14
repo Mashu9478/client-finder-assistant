@@ -1,0 +1,294 @@
+{#
+  Concept layout 2: editorial. Centred serif masthead with a ruled nav line, a
+  large serif headline with the introduction beside it, a wide picture strip
+  (photo, or a tile pattern in the palette), a facts line, services as three
+  ruled text columns, reviews on the brand colour, booking and a ruled enquiry
+  form side by side, and a typographic footer.
+#}
+{% import "_concept_ui.html.j2" as ui %}
+{% set both = cxf.booking and cxf.enquiry_form %}
+{% set either = cxf.booking or cxf.enquiry_form %}
+{% set long_names = (cx_services|map('length')|max if cx_services else 0) > 28 %}
+<style>
+  .cx-v2 .cx-btn { border-radius: 5px; }
+  .cx-v2 .cx-mono { border-radius: 5px; font-family: var(--cx-serif); font-weight: 700; }
+  .cx-v2 .cx-pick { border-radius: 5px; }
+  .cx-v2 .cx-chat { flex-direction: row; align-items: center; }
+  .cx-v2 .cx-chat-note { border-radius: 8px; }
+
+  .v2-head { flex: none; padding: 0 96px; }
+  .v2-mast { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; column-gap: 32px; height: 92px; }
+  .v2-where { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 320px; color: var(--cx-body); font-size: 15px; }
+  .v2-where .cx-ico { color: var(--cx-primary); font-size: 17px; }
+  .v2-brand { display: flex; align-items: center; gap: 14px; min-width: 0; max-width: 620px; }
+  .v2-name { min-width: 0; font-family: var(--cx-serif); font-size: 27px; line-height: 1.2; letter-spacing: -.01em; }
+  .v2-call { justify-self: end; display: flex; align-items: center; gap: 10px; max-width: 280px; height: 44px; padding: 0 20px; border-radius: 5px; background: var(--cx-dark); color: #fff; font-size: 15.5px; font-weight: 600; }
+  .v2-navline { display: flex; align-items: center; justify-content: center; gap: 56px; height: 52px; border-top: 1.5px solid var(--cx-ink); border-bottom: 1px solid var(--cx-line); }
+  .v2-navline > div { flex: 0 1 auto; min-width: 0; max-width: 260px; font-size: 15.5px; font-weight: 600; letter-spacing: .01em; }
+
+  .v2-hero { flex: none; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); align-items: end; column-gap: 72px; padding: 42px 96px 0; }
+  .v2-kicker { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; color: var(--cx-primary); font-size: 17px; font-weight: 600; }
+  .v2-kicker::before { content: ""; flex: none; width: 40px; height: 2px; background: var(--cx-primary); }
+  .v2-h1 { padding-bottom: 8px; color: var(--cx-dark); font-family: var(--cx-serif); font-weight: 400; }
+  .v2-h1-xl { font-size: 84px; line-height: 1.02; letter-spacing: -.025em; }
+  .v2-h1-l { font-size: 66px; line-height: 1.06; letter-spacing: -.02em; }
+  .v2-h1-m { font-size: 52px; line-height: 1.1; letter-spacing: -.015em; }
+  .v2-sub { padding-bottom: 2px; color: var(--cx-body); font-size: 20px; line-height: 1.5; }
+  .v2-sub-long { font-size: 17.5px; }
+  .v2-actions { display: flex; align-items: center; gap: 26px; margin-top: 24px; padding-bottom: 10px; }
+  .v2-link { min-width: 0; padding-bottom: 3px; border-bottom: 2px solid var(--cx-primary); color: var(--cx-dark); font-size: 17.5px; font-weight: 600; }
+
+  .v2-figure { position: relative; flex: 8 1 auto; min-height: 220px; margin: 34px 96px 0; overflow: hidden; background: var(--cx-tint); }
+  .v2-figure > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .v2-figure > img { position: absolute; inset: 0; }
+  .v2-figure .cx-tag { top: 18px; }
+
+  .v2-facts { flex: none; display: flex; margin: 0 96px; border-bottom: 1px solid var(--cx-line); }
+  .v2-fact { flex: 1 1 0; min-width: 0; padding: 16px 28px 17px 0; }
+  .v2-fact + .v2-fact { padding-left: 28px; border-left: 1px solid var(--cx-line); }
+  .v2-fact-label { color: var(--cx-primary); font-size: 14.5px; font-weight: 600; line-height: 1.3; }
+  .v2-fact-value { font-size: 17.5px; font-weight: 600; line-height: 1.4; }
+
+  .v2-services { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 228px repeat(3, minmax(0, 1fr)); align-content: center; column-gap: 36px; padding: 30px 96px; }
+  .v2-h2 { color: var(--cx-dark); font-family: var(--cx-serif); font-size: 38px; line-height: 1.1; letter-spacing: -.015em; }
+  .v2-col { min-width: 0; padding-top: 16px; border-top: 2px solid var(--cx-dark); }
+  .v2-col-name { font-family: var(--cx-serif); font-size: 26px; line-height: 1.2; letter-spacing: -.008em; }
+  .v2-col-name-long { font-size: 22px; }
+  .v2-col-text { margin-top: 9px; color: var(--cx-muted); font-size: 16px; line-height: 1.5; }
+  .v2-col-more { display: inline-block; margin-top: 12px; padding-bottom: 2px; border-bottom: 1.5px solid var(--cx-primary); color: var(--cx-dark); font-size: 15.5px; font-weight: 600; }
+
+  .v2-reviews { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 80px; padding: 30px 96px; background: var(--cx-primary); color: #fff; }
+  .v2-reviews-solo { grid-template-columns: minmax(0, 1fr); }
+  .v2-score-num { font-family: var(--cx-serif); font-size: 84px; line-height: .95; letter-spacing: -.02em; }
+  .v2-score .cx-stars { margin-top: 12px; font-size: 24px; }
+  .v2-score .cx-stars-fill { color: #fff; }
+  .v2-score-sub { margin-top: 8px; color: rgba(255, 255, 255, .92); font-size: 15.5px; }
+  .v2-quote-title { font-family: var(--cx-serif); font-size: 27px; line-height: 1.2; }
+  .v2-quote-body { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 22px; margin-top: 14px; padding: 20px 26px 22px; border: 1.5px dashed rgba(255, 255, 255, .5); }
+  .v2-quote-glyph { height: 56px; font-family: var(--cx-serif); font-size: 110px; line-height: .9; opacity: .5; }
+  .v2-quote-lines { padding-top: 8px; }
+
+  .v2-contact { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: center; column-gap: 80px; padding: 30px 96px; background: var(--cx-tint); }
+  .v2-contact-solo { grid-template-columns: minmax(0, 1fr); }
+  .v2-h3 { color: var(--cx-dark); font-family: var(--cx-serif); font-size: 34px; line-height: 1.12; letter-spacing: -.012em; }
+  .v2-block-text { margin-top: 6px; color: var(--cx-body); font-size: 16.5px; }
+  .v2-days { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 18px; }
+  .v2-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .v2-block .cx-btn { margin-top: 18px; }
+  .v2-lines { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; margin-top: 10px; }
+  .v2-line { height: 54px; display: flex; align-items: flex-end; padding-bottom: 9px; border-bottom: 1.5px solid color-mix(in srgb, var(--cx-dark) 45%, transparent); color: var(--cx-muted); font-size: 16px; }
+  .v2-line-wide { grid-column: 1 / -1; height: 72px; }
+  .v2-details { margin-top: 22px; }
+  .v2-detail { display: flex; align-items: flex-start; gap: 12px; font-size: 18.5px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+  .v2-detail + .v2-detail { margin-top: 10px; }
+  .v2-detail .cx-ico { margin-top: 3px; color: var(--cx-primary); font-size: 20px; }
+
+  .v2-foot { flex: none; padding: 26px 96px 22px; background: var(--cx-dark); color: #fff; }
+  .v2-foot-chat { padding-right: 340px; }
+  .v2-foot-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 56px; }
+  .v2-foot-name { max-width: 720px; font-family: var(--cx-serif); font-size: 34px; line-height: 1.14; letter-spacing: -.012em; overflow-wrap: anywhere; }
+  .v2-foot-name-long { font-size: 25px; }
+  .v2-foot-contact { flex: 0 1 auto; min-width: 0; max-width: 400px; text-align: right; color: rgba(255, 255, 255, .9); font-size: 15.5px; line-height: 1.5; }
+  .v2-foot-contact b { color: #fff; font-weight: 600; }
+  .v2-foot-nav { display: flex; gap: 34px; margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, .25); color: rgba(255, 255, 255, .9); font-size: 15px; font-weight: 500; }
+  .v2-foot-nav > div { flex: 0 1 auto; min-width: 0; max-width: 220px; }
+</style>
+<div class="cx cx-v2" style="{{ ui.palette(cx) }}">
+  <div class="v2-head">
+    <div class="v2-mast">
+      <div>
+        {% if cx.address %}
+        <div class="v2-where">{{ ui.icon('pin') }}<span class="cx-one-line">{{ cx.address }}</span></div>
+        {% endif %}
+      </div>
+      <div class="v2-brand">
+        {{ ui.mono(cx) }}
+        {% if cx_name %}
+        <div class="v2-name cx-one-line">{{ cx_name }}</div>
+        {% endif %}
+      </div>
+      <div>
+        {% if cxf.tap_to_call %}
+        <div class="v2-call">{{ ui.icon('phone') }}<span class="cx-one-line">{{ cx_call }}</span></div>
+        {% endif %}
+      </div>
+    </div>
+    {% if cx_nav %}
+    <div class="v2-navline">
+      {% for n in cx_nav %}
+      <div class="cx-one-line">{{ n }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="v2-hero">
+    <div>
+      {% if cx.category %}
+      <div class="v2-kicker"><span class="cx-one-line">{{ cx.category }}</span></div>
+      {% endif %}
+      <div class="v2-h1 v2-h1-{{ cx_hsize }} cx-clamp-3">{{ cx_headline }}</div>
+    </div>
+    <div>
+      <div class="v2-sub{% if cx_sub_long %} v2-sub-long{% endif %} cx-clamp-4">{{ cx_sub }}</div>
+      <div class="v2-actions">
+        <div class="cx-btn cx-btn-sm">{{ cx_cta }}</div>
+        {% if cxf.tap_to_call %}
+        <div class="v2-link cx-one-line">{% if cx.phone %}Call {{ cx.phone }}{% else %}Call us{% endif %}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="v2-figure">
+    {% if cx_photo %}
+    <img class="cx-photo" src="{{ cx_photo }}" alt="">
+    {% else %}
+    <svg viewBox="0 0 1248 312" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <rect class="cx-f-tint" width="1248" height="312"/>
+      <path class="cx-f-primary" d="M0 0h156a156 156 0 0 1-156 156z"/>
+      <g transform="translate(156 0)"><rect class="cx-f-primary" width="156" height="156"/><circle class="cx-f-accent" cx="78" cy="78" r="50"/></g>
+      <g transform="translate(312 0)"><rect class="cx-f-dark" width="156" height="156"/><path class="cx-f-tint" d="M156 156h-156a156 156 0 0 1 156-156z"/></g>
+      <g transform="translate(468 0)"><path class="cx-f-primary" d="M0 156a78 78 0 0 1 156 0z"/><circle class="cx-f-dark" cx="78" cy="42" r="14"/></g>
+      <g transform="translate(624 0)"><rect class="cx-f-accent" width="156" height="156"/><path class="cx-f-dark" d="M156 0v156a156 156 0 0 1-156-156z"/></g>
+      <g transform="translate(780 0)"><rect class="cx-f-primary" y="0" width="156" height="20"/><rect class="cx-f-primary" y="45" width="156" height="20"/><rect class="cx-f-primary" y="90" width="156" height="20"/><rect class="cx-f-primary" y="135" width="156" height="21"/></g>
+      <g transform="translate(936 0)"><rect class="cx-f-primary" width="156" height="156"/><path class="cx-f-tint" d="M0 156v-156a156 156 0 0 1 156 156z"/></g>
+      <g transform="translate(1092 0)"><rect class="cx-f-dark" width="156" height="156"/><circle class="cx-f-none cx-s-accent" cx="78" cy="78" r="46" stroke-width="16"/></g>
+      <g transform="translate(0 156)"><rect class="cx-f-dark" width="156" height="156"/><path class="cx-f-accent" d="M0 156a78 78 0 0 1 156 0z"/></g>
+      <g transform="translate(156 156)"><path class="cx-f-dark" d="M156 156h-156a156 156 0 0 1 156-156z"/></g>
+      <g transform="translate(312 156)"><rect class="cx-f-primary" width="156" height="156"/><rect class="cx-f-tint" x="0" width="20" height="156"/><rect class="cx-f-tint" x="45" width="20" height="156"/><rect class="cx-f-tint" x="90" width="20" height="156"/><rect class="cx-f-tint" x="135" width="21" height="156"/></g>
+      <g transform="translate(468 156)"><rect class="cx-f-dark" width="156" height="156"/><path class="cx-f-primary" d="M0 0h156a156 156 0 0 1-156 156z"/></g>
+      <g transform="translate(624 156)"><circle class="cx-f-primary" cx="78" cy="78" r="58"/><circle class="cx-f-tint" cx="78" cy="78" r="22"/></g>
+      <g transform="translate(780 156)"><rect class="cx-f-dark" width="156" height="156"/><path class="cx-f-primary" d="M156 0v156a156 156 0 0 1-156-156z"/></g>
+      <g transform="translate(936 156)"><rect class="cx-f-accent" width="156" height="156"/><path class="cx-f-white" d="M0 0a78 78 0 0 0 156 0z"/></g>
+      <g transform="translate(1092 156)"><path class="cx-f-primary" d="M0 156v-156a156 156 0 0 1 156 156z"/></g>
+    </svg>
+    {% endif %}
+    {{ ui.tag(cx) }}
+  </div>
+
+  {% if cx.address or cx.phone or either %}
+  <div class="v2-facts">
+    {% if cx.address %}
+    <div class="v2-fact"><div class="v2-fact-label">Visit</div><div class="v2-fact-value cx-one-line">{{ cx.address }}</div></div>
+    {% endif %}
+    {% if cx.phone %}
+    <div class="v2-fact"><div class="v2-fact-label">Call</div><div class="v2-fact-value cx-one-line">{{ cx.phone }}</div></div>
+    {% endif %}
+    {% if either %}
+    <div class="v2-fact"><div class="v2-fact-label">Online</div><div class="v2-fact-value cx-one-line">{{ 'Book at any hour' if cxf.booking else 'Message us at any hour' }}</div></div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if cx_services %}
+  <div class="v2-services">
+    <div class="v2-h2">What we do</div>
+    {% for s in cx_services %}
+    <div class="v2-col">
+      <div class="v2-col-name{% if long_names %} v2-col-name-long{% endif %} cx-clamp-3">{{ s }}</div>
+      <div class="v2-col-text">{{ cx_lines[loop.index0] }}</div>
+      <div class="v2-col-more">Find out more</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if cxf.reviews %}
+  <div class="v2-reviews{% if not cx_has_rating %} v2-reviews-solo{% endif %}">
+    {% if cx_has_rating %}
+    <div class="v2-score">
+      <div class="v2-score-num">{{ '%.1f'|format(cx.rating) }}</div>
+      {{ ui.stars(cx.rating) }}
+      <div class="v2-score-sub">{{ ui.review_count(cx) }}</div>
+    </div>
+    {% endif %}
+    <div>
+      <div class="v2-quote-title">Your customer reviews</div>
+      <div class="v2-quote-body">
+        <div class="v2-quote-glyph">&ldquo;</div>
+        <div class="v2-quote-lines">
+          <div class="cx-bar"></div>
+          <div class="cx-bar cx-bar-80"></div>
+          <div class="cx-bar cx-bar-55"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="v2-contact{% if not either %} v2-contact-solo{% endif %}">
+    {% if not both %}
+    <div class="v2-block">
+      <div class="v2-h3">{{ 'Get in touch' if cxf.enquiry_form or not cxf.booking else 'Book a visit' }}</div>
+      <div class="v2-block-text">
+        {% if cxf.enquiry_form %}
+        Send a message and it reaches the team straight away.
+        {% elif cxf.booking %}
+        Choose a day and a time, and the visit is booked.
+        {% else %}
+        We are glad to answer any question.
+        {% endif %}
+      </div>
+      {% if cx.phone or cx.address %}
+      <div class="v2-details">
+        {% if cx.phone %}
+        <div class="v2-detail">{{ ui.icon('phone') }}<span>{{ cx.phone }}</span></div>
+        {% endif %}
+        {% if cx.address %}
+        <div class="v2-detail">{{ ui.icon('pin') }}<span class="cx-clamp-2">{{ cx.address }}</span></div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if not either %}
+      <div class="cx-btn cx-btn-sm">Get in touch</div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if cxf.booking %}
+    <div class="v2-block">
+      <div class="v2-h3">{{ 'Book a visit' if both else 'Book online' }}</div>
+      <div class="v2-block-text">Pick a day and a time that suits you.</div>
+      <div class="v2-days">{{ ui.days() }}</div>
+      <div class="v2-slots">{{ ui.slots() }}</div>
+      <div class="cx-btn cx-btn-sm cx-btn-dark">Confirm booking</div>
+    </div>
+    {% endif %}
+    {% if cxf.enquiry_form %}
+    <div class="v2-block">
+      <div class="v2-h3">Send an enquiry</div>
+      <div class="v2-lines">
+        <div class="v2-line">Your name</div>
+        <div class="v2-line">Phone number</div>
+        <div class="v2-line v2-line-wide">How can we help?</div>
+      </div>
+      <div class="cx-btn cx-btn-sm">Send enquiry</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="v2-foot{% if cxf.chat %} v2-foot-chat{% endif %}">
+    <div class="v2-foot-main">
+      <div class="v2-foot-name{% if cx_name|length > 44 %} v2-foot-name-long{% endif %} cx-clamp-2">{{ cx_name }}</div>
+      {% if cx.address or cx.phone %}
+      <div class="v2-foot-contact">
+        {% if cx.address %}
+        <div class="cx-clamp-2">{{ cx.address }}</div>
+        {% endif %}
+        {% if cx.phone %}
+        <div class="cx-one-line"><b>{{ cx.phone }}</b></div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% if cx_nav %}
+    <div class="v2-foot-nav">
+      {% for n in cx_nav %}
+      <div class="cx-one-line">{{ n }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  {{ ui.chat(cxf) }}
+</div>

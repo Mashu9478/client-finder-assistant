@@ -1,0 +1,82 @@
+{#
+  Small building blocks shared by the four concept layouts.
+  Import with:  {% import "_concept_ui.html.j2" as ui %}
+  Everything is passed in explicitly; nothing here reads the context.
+#}
+
+{% macro icon(name) %}
+{% if name == 'phone' %}
+<svg class="cx-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+{% elif name == 'pin' %}
+<svg class="cx-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+{% elif name == 'chat' %}
+<svg class="cx-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5h14a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-7.6L6 21.6v-4.1H5a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3z"/></svg>
+{% elif name == 'check' %}
+<svg class="cx-ico cx-ico-line" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.6l4.6 4.6L19 7.6"/></svg>
+{% elif name == 'star' %}
+<svg class="cx-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2l3 6.2 6.8 1-4.9 4.8 1.2 6.8-6.1-3.2-6.1 3.2 1.2-6.8L2.2 9.4l6.8-1z"/></svg>
+{% elif name == 'clock' %}
+<svg class="cx-ico cx-ico-line" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.2V12l3.2 2"/></svg>
+{% endif %}
+{% endmacro %}
+
+{# The palette as CSS custom properties, for the root element's style attribute. #}
+{% macro palette(cx) %}{% set p = cx.palette or {} %}{% if p.primary %}--cx-primary: {{ p.primary }}; {% endif %}{% if p.dark %}--cx-dark: {{ p.dark }}; {% endif %}{% if p.tint %}--cx-tint: {{ p.tint }}; {% endif %}{% if p.accent %}--cx-accent: {{ p.accent }};{% endif %}{% endmacro %}
+
+{# The label that marks the picture as a concept. Each layout positions .cx-tag. #}
+{% macro tag(cx) %}
+{% if cx.label %}
+<div class="cx-tag cx-one-line">{{ cx.label }}</div>
+{% endif %}
+{% endmacro %}
+
+{% macro mono(cx, extra='') %}
+{% if cx.initials %}
+<div class="cx-mono{% if cx.initials|length > 2 %} cx-mono-small{% endif %}{% if extra %} {{ extra }}{% endif %}">{{ cx.initials }}</div>
+{% endif %}
+{% endmacro %}
+
+{# Five stars filled to the real rating. Only call with a numeric rating. #}
+{% macro stars(rating) %}
+<div class="cx-stars">
+  <div class="cx-stars-row cx-stars-base">{% for i in range(5) %}{{ icon('star') }}{% endfor %}</div>
+  <div class="cx-stars-fill" style="width: {{ '%.1f'|format([[rating, 0]|max, 5]|min * 20) }}%">
+    <div class="cx-stars-row">{% for i in range(5) %}{{ icon('star') }}{% endfor %}</div>
+  </div>
+</div>
+{% endmacro %}
+
+{# "out of 5, from 212 reviews" - real numbers only. #}
+{% macro review_count(cx) %}{% if cx.reviews is number and cx.reviews > 0 %}out of 5, from {{ cx.reviews }} {{ 'review' if cx.reviews == 1 else 'reviews' }}{% else %}out of 5{% endif %}{% endmacro %}
+
+{# An empty review: grey bars where a customer's words would go. Never a made-up quote. #}
+{% macro quote() %}
+<div class="cx-quote">
+  <div class="cx-bar"></div>
+  <div class="cx-bar cx-bar-80"></div>
+  <div class="cx-bar cx-bar-55"></div>
+  <div class="cx-quote-who"><div class="cx-quote-face"></div><div class="cx-quote-name"></div></div>
+</div>
+{% endmacro %}
+
+{% macro chat(cxf) %}
+{% if cxf.chat %}
+<div class="cx-chat">
+  <div class="cx-chat-note">Hi, how can we help?</div>
+  <div class="cx-chat-btn">{{ icon('chat') }}</div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{# Day and time-of-day choices for a booking widget. No dates, prices or opening hours. #}
+{% macro days(count=6, on=3) %}
+{% for d in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][:count] %}
+<div class="cx-pick{% if loop.index == on %} cx-pick-on{% endif %}">{{ d }}</div>
+{% endfor %}
+{% endmacro %}
+
+{% macro slots() %}
+{% for t in ['Morning', 'Midday', 'Afternoon'] %}
+<div class="cx-pick{% if loop.index == 2 %} cx-pick-soft{% endif %}">{{ t }}</div>
+{% endfor %}
+{% endmacro %}

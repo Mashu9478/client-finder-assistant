@@ -450,13 +450,13 @@
         <h3 id="d-report-title" tabindex="-1">Report and concept picture</h3>
         <p class="email-busy" id="d-report-busy" hidden>
           <span class="spinner" aria-hidden="true"></span>
-          <span>Creating the report and picture… this takes up to half a minute.</span>
+          <span id="d-report-busy-text">Creating the report and picture… this takes up to half a minute.</span>
         </p>
         <p class="form-error" id="d-report-error" role="alert" hidden></p>
         <p class="none" id="d-report-loading" hidden>Loading the report…</p>
 
         <div class="email-empty" id="d-report-empty" hidden>
-          <p class="audit-note">Create a PDF review of this website to send to the business, with a picture of how their homepage could look.</p>
+          <p class="audit-note">Create a PDF review written around this business's needs, with a picture of a homepage designed for it in its own colours and wording.</p>
           <div class="inline-action">
             <button type="button" class="btn btn--primary" id="d-report-create" data-fk="report-create">
               <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>
@@ -467,10 +467,11 @@
         </div>
 
         <div class="email-draft" id="d-report-ready" hidden>
+          <div class="notice notice--inline" id="d-report-note" hidden></div>
           <figure class="concept">
             <div class="concept-frame" id="d-report-frame">
               <img id="d-report-img" alt="" width="1440" height="1800">
-              <p class="none concept-missing" id="d-report-img-missing" hidden>The picture could not be shown. Press Create again to make a new one.</p>
+              <p class="none concept-missing" id="d-report-img-missing" hidden>The picture could not be shown. Press Try another design to make a new one.</p>
             </div>
             <figcaption>
               <a id="d-report-full" target="_blank" rel="noopener noreferrer" data-fk="report-full">View full picture<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-external"/></svg><span class="sr-only"> (opens in a new tab)</span></a>
@@ -494,7 +495,7 @@
             </a>
             <button type="button" class="btn" id="d-report-again" data-fk="report-again">
               <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>
-              <span>Create again</span>
+              <span>Try another design</span>
             </button>
             <button type="button" class="btn btn--danger-quiet" id="d-report-remove" data-fk="report-remove">
               <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg>

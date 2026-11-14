@@ -2,25 +2,50 @@
   Website review report. A4, printed to PDF by headless Chromium / Edge:
     --headless --no-pdf-header-footer --print-to-pdf=out.pdf report.html
 
-  Self-contained: no external resources, no JavaScript, no image files.
-  The homepage concept comes from the shared partial _concept.html.j2 and is
-  scaled down with a CSS transform inside a browser-style frame.
+  Self-contained: no external resources and no JavaScript. The only images are
+  data: URIs handed in by the renderer (concept_image). Every value from the
+  context is autoescaped; do not add |safe.
 
-  Every value from the context is autoescaped. Do not add |safe.
+  What the document contains follows the data, so two businesses rarely get the
+  same report:
+    - site read, things to fix   cover, summary, "Where to start", staged plan,
+                                 what already works, detail by area, what we would
+                                 do, concept page, about
+    - site read, nothing to fix  cover, summary, what already works (as the lead),
+                                 one or two ideas, concept page, about
+    - no site to read            cover, then the concept beside the introduction on
+                                 page 1, where to start, what we would do, about
+  Empty lists drop their section. theme.palette colours the document and
+  theme.cover_variant (0-2) picks one of three first-page headers. The red / amber /
+  green cues never take their colour from the theme.
 #}
 {% set site_read = summary.site_read is not false %}
 {% set doc_kind = 'Website review' if site_read else 'Online presence review' %}
+{% set tp = (theme.palette if theme else none) or (concept.palette if concept else none) or {} %}
+{% set cover = theme.cover_variant|default(0, true)|int(0) if theme else 0 %}
+{% if cover not in [0, 1, 2] %}{% set cover = 0 %}{% endif %}
+{% set img = concept_image if (concept_image is string and concept_image.startswith('data:image/')) else '' %}
+{% set initials = concept.initials if concept else '' %}
 {% set counts = summary.counts or {} %}
 {% set n_high = counts.high|default(0, true)|int %}
 {% set n_medium = counts.medium|default(0, true)|int %}
 {% set n_low = counts.low|default(0, true)|int %}
 {% set n_passed = summary.checks_passed|default(0, true)|int %}
+{% set prios = (priorities or [])[:3] %}
+{% set prio_codes = prios|map(attribute='code')|list %}
+{% set prio_titles = prios|map(attribute='title')|list %}
+{% set stages = (plan or [])|selectattr('steps')|list %}
+{% set good = strengths or [] %}
+{% set problem_areas = (areas or [])|selectattr('findings')|list %}
+{% set clear_areas = (areas or [])|rejectattr('findings')|list %}
 {# Priority wording follows the findings' own severity_label when there is one. #}
-{% set ns = namespace(n=0, total=0, any_passed=false, high='High priority', medium='Worth fixing', low='Nice to have') %}
-{% for area in areas or [] %}
-  {% if area.passed %}{% set ns.any_passed = true %}{% endif %}
-  {% for f in area.findings or [] %}
+{# detail: areas with something not yet set out under "Where to start"; covered: areas that are fully set out there. #}
+{% set ns = namespace(total=0, steps=0, open=0, detail=[], covered=[], high='High priority', medium='Worth fixing', low='Nice to have') %}
+{% for area in problem_areas %}
+  {% set ns.open = 0 %}
+  {% for f in area.findings %}
     {% set ns.total = ns.total + 1 %}
+    {% if not ((f.code and f.code in prio_codes) or f.title in prio_titles) %}{% set ns.open = ns.open + 1 %}{% endif %}
     {% if f.severity_label %}
       {% if f.severity == 'high' %}{% set ns.high = f.severity_label %}
       {% elif f.severity == 'medium' %}{% set ns.medium = f.severity_label %}
@@ -28,8 +53,15 @@
       {% endif %}
     {% endif %}
   {% endfor %}
+  {% if ns.open %}{% set ns.detail = ns.detail + [area] %}{% else %}{% set ns.covered = ns.covered + [area] %}{% endif %}
 {% endfor %}
+{% for s in stages %}{% set ns.steps = ns.steps + s.steps|length + (s.more|default(0, true)|int) %}{% endfor %}
+{# The plan and the detail only appear when they say more than "Where to start" already has. #}
+{% set show_plan = stages and (ns.steps > prios|length or not prios) %}
+{% set show_detail = ns.detail|length > 0 %}
+{% set lead_concept = img and not site_read %}
 {% set name_len = (lead.name or '')|length %}
+{% set name_class = 'name-xlong' if name_len > 70 else ('name-long' if name_len > 34 else '') %}
 {% set has_facts = site_read and (lead.website or summary.pages_checked or summary.response_seconds is number
                     or summary.https is boolean or summary.platform or summary.pagespeed_mobile is number or summary.checked_on) %}
 {% set studio = sender.studio or sender.name %}
@@ -44,48 +76,62 @@
 {% endif %}
 {% endmacro %}
 
-{% macro finding(f, n) %}
-<div class="finding">
-  <div class="finding-n">{{ n }}</div>
-  <div class="finding-body">
-    <div class="finding-top">
-      <h4 class="finding-title">{{ f.title }}</h4>
-      {% if f.severity_label %}
-      <p class="prio">{{ dots(f.severity) }}<span>{{ f.severity_label }}</span></p>
-      {% endif %}
-    </div>
-    {% if f.what %}
-    <p class="finding-what">{{ f.what }}</p>
-    {% endif %}
-    {% if f.fix %}
-    <div class="fix"><p class="fix-label">Recommended fix</p><p class="fix-text">{{ f.fix }}</p></div>
-    {% endif %}
-  </div>
-</div>
+{% macro prio(f) %}
+{% if f.severity_label %}
+<p class="prio">{{ dots(f.severity) }}<span>{{ f.severity_label }}</span></p>
+{% endif %}
 {% endmacro %}
 
-{# also=true: a short run-on line under an area's findings.
-   also=false: an area where nothing was wrong, kept to one compact row:
-   the checks, with the status label at the right-hand edge. #}
-{% macro passed_list(area, also) %}
-<div class="passed{% if not also %} passed-row{% endif %}">
-  <ul class="passed-items{% if also %} passed-items-run{% elif area.passed|length > 1 %} passed-items-2{% endif %}">
-    {% if also %}
-    <li class="passed-label">Also checked, and fine</li>
-    {% endif %}
-    {% for item in area.passed %}
-    <li>{{ tick() }}<span>{{ item }}</span></li>
-    {% endfor %}
-  </ul>
-  {% if not also %}
-  {{ status(area) }}
+{% macro fix(f) %}
+{% if f.fix %}
+<div class="fix"><p class="fix-label">Recommended fix</p><p class="fix-text">{{ f.fix }}</p></div>
+{% endif %}
+{% endmacro %}
+
+{# One finding in the detail section. Findings already set out under "Where to start" are a one-line pointer. #}
+{% macro finding(f) %}
+{% set at = (prio_codes.index(f.code) + 1) if (f.code and f.code in prio_codes) else ((prio_titles.index(f.title) + 1) if f.title in prio_titles else 0) %}
+<div class="finding">
+  <div class="finding-top">
+    <h4 class="finding-title">{{ f.title }}</h4>
+    {{ prio(f) }}
+  </div>
+  {% if at %}
+  <p class="finding-see">Set out under &ldquo;Where to start&rdquo;, point {{ at }}.</p>
+  {% else %}
+  {% if f.what %}
+  <p class="finding-what">{{ f.what }}</p>
+  {% endif %}
+  {{ fix(f) }}
   {% endif %}
 </div>
 {% endmacro %}
 
+{% macro frame(caption) %}
+<figure class="frame">
+  <div class="frame-bar"><span class="frame-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="frame-addr">Concept preview</span></div>
+  <img class="frame-img" src="{{ img }}" alt="Concept of a homepage for {{ lead.name }}">
+</figure>
+{% if caption and concept and concept.label %}
+<p class="frame-label">{{ concept.label }}</p>
+{% endif %}
+{% endmacro %}
+
+{% macro cover_where() %}
+{% if lead.category or lead.address %}
+<p class="cover-where">{% if lead.category %}<span>{{ lead.category }}</span>{% endif %}{% if lead.address %}<span>{{ lead.address }}</span>{% endif %}</p>
+{% endif %}
+{% endmacro %}
+
+{% macro cover_by() %}
+{% if sender.byline or studio %}
+<p class="cover-by"><span>Prepared by</span> {{ sender.byline or studio }}</p>
+{% endif %}
+{% endmacro %}
+
 {% macro plain_url(u) %}{{ (u|string|replace('https://', '')|replace('http://', '')).rstrip('/') }}{% endmacro %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="{% if tp.primary %}--t-primary: {{ tp.primary }}; {% endif %}{% if tp.dark %}--t-dark: {{ tp.dark }}; {% endif %}{% if tp.tint %}--t-tint: {{ tp.tint }}; {% endif %}{% if tp.accent %}--t-accent: {{ tp.accent }};{% endif %}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -93,7 +139,7 @@
 <style>
   @page {
     size: A4;
-    /* Side margins live on .sheet so the cover band can run edge to edge. */
+    /* Side margins live on .sheet so the cover can run to the paper's edge. */
     margin: 13mm 0 14mm 0;
     @bottom-left {
       content: "{{ doc_kind }}";
@@ -113,14 +159,16 @@
   @page :first { margin-top: 0; }
 
   :root {
-    --ink: #1B1E33;
-    --text: #2B2F47;
-    --muted: #5D6279;
-    --rule: #D9DBE7;
-    --wash: #F3F4FA;
-    --accent: #3A3FA3;
-    --band: #23275E;
-    --band-soft: #C5C8F0;
+    /* Theme: overridden from theme.palette on the html element. */
+    --t-primary: #1D4ED8;
+    --t-dark: #1E3A8A;
+    --t-tint: #EFF6FF;
+    --t-accent: #F59E0B;
+    /* Fixed: reading colours and status cues do not follow the theme. */
+    --ink: #1B1E2B;
+    --text: #2C303D;
+    --muted: #5F6473;
+    --rule: #DADCE3;
     --red: #B5382C;
     --amber: #B36B00;
     --green: #2A7A4C;
@@ -129,66 +177,86 @@
     --serif: Georgia, Cambria, "Times New Roman", "DejaVu Serif", serif;
   }
 
-  html {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  body {
-    margin: 0;
-    background: #fff;
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 9.2pt;
-    line-height: 1.42;
-    -webkit-text-size-adjust: 100%;
-  }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; background: #fff; color: var(--text); font-family: var(--sans); font-size: 9.2pt; line-height: 1.42; -webkit-text-size-adjust: 100%; }
   .doc, .doc *, .doc *::before, .doc *::after { box-sizing: border-box; }
   /* :where() keeps the reset at zero specificity, so single-class rules below still win */
-  :where(.doc) :where(h1, h2, h3, h4, p, ul, dl, dt, dd, figure) { margin: 0; padding: 0; font-size: inherit; font-weight: inherit; }
-  :where(.doc) ul { list-style: none; }
+  :where(.doc) :where(h1, h2, h3, h4, p, ul, ol, dl, dt, dd, figure) { margin: 0; padding: 0; font-size: inherit; font-weight: inherit; }
+  :where(.doc) :where(ul, ol) { list-style: none; }
   :where(.doc) a { color: inherit; text-decoration: none; }
-  .wrap { overflow-wrap: anywhere; }
-  .keep { break-inside: avoid; page-break-inside: avoid; }
 
   .sheet { padding: 0 16mm; }
 
-  /* Cover band */
-  .cover {
-    position: relative;
-    padding: 10mm 16mm 5.5mm;
-    background: var(--band);
-    color: #fff;
-    break-inside: avoid;
-  }
-  .cover-kind { display: block; color: var(--band-soft); font-family: var(--sans); font-size: 11.5pt; font-weight: 600; line-height: 1.3; }
-  .cover-date { position: absolute; top: 10mm; right: 16mm; color: var(--band-soft); font-size: 9pt; line-height: 1.6; }
-  .cover-name {
-    display: block; max-width: 150mm; margin-top: 3mm;
-    font-family: var(--serif); font-size: 29pt; font-weight: 400; line-height: 1.12; letter-spacing: -.012em;
-    overflow-wrap: anywhere; text-wrap: balance;
-  }
-  .cover-name-long { font-size: 22pt; line-height: 1.16; }
-  .cover-name-xlong { font-size: 17.5pt; line-height: 1.22; letter-spacing: 0; }
-  .cover-where { display: flex; flex-wrap: wrap; gap: 0 3.2mm; margin-top: 3mm; color: #E4E5F6; font-size: 9.4pt; overflow-wrap: anywhere; }
-  .cover-where span + span { padding-left: 3.2mm; border-left: 0.5pt solid rgba(255, 255, 255, .4); }
-  .cover-by { margin-top: 4.5mm; padding-top: 2.2mm; border-top: 0.5pt solid rgba(255, 255, 255, .28); font-size: 9.4pt; overflow-wrap: anywhere; }
-  .cover-by span { color: var(--band-soft); }
+  /* ---------- Cover: three first-page headers ---------- */
+  .cover { position: relative; break-inside: avoid; }
+  .cover-kind { display: block; font-family: var(--sans); font-size: 11.5pt; font-weight: 600; line-height: 1.3; }
+  .cover-name { display: block; max-width: 150mm; margin-top: 3mm; font-family: var(--serif); font-size: 29pt; font-weight: 400; line-height: 1.12; letter-spacing: -.012em; overflow-wrap: anywhere; text-wrap: balance; }
+  .cover-name.name-long { font-size: 22pt; line-height: 1.16; }
+  .cover-name.name-xlong { font-size: 17.5pt; line-height: 1.22; letter-spacing: 0; }
+  .cover-where { display: flex; flex-wrap: wrap; gap: 0 3.2mm; margin-top: 3mm; font-size: 9.4pt; overflow-wrap: anywhere; }
+  .cover-where span + span { padding-left: 3.2mm; border-left: 0.5pt solid currentColor; }
+  .cover-by { font-size: 9.4pt; overflow-wrap: anywhere; }
+  .cover-date { font-size: 9pt; line-height: 1.6; white-space: nowrap; }
 
-  /* Summary */
+  /* 0: full-width band in the brand colour */
+  .cover-0 { padding: 10mm 16mm 5.5mm; border-bottom: 1.6mm solid var(--t-accent); background: var(--t-primary); color: #fff; }
+  .cover-0 .cover-kind, .cover-0 .cover-date, .cover-0 .cover-by span { color: rgba(255, 255, 255, .84); }
+  .cover-0 .cover-date { position: absolute; top: 10mm; right: 16mm; }
+  .cover-0 .cover-where { color: rgba(255, 255, 255, .94); }
+  .cover-0 .cover-by { margin-top: 4.5mm; padding-top: 2.2mm; border-top: 0.5pt solid rgba(255, 255, 255, .4); }
+
+  /* 1: colour column at the left, title beside it on white */
+  .cover-1 { display: grid; grid-template-columns: 58mm minmax(0, 1fr); min-height: 56mm; }
+  .cover-1 .cover-side { display: flex; flex-direction: column; justify-content: space-between; padding: 11mm 6mm 6mm 16mm; background: var(--t-dark); color: #fff; }
+  .cover-1 .cover-side::after { content: ""; width: 12mm; height: 1.6mm; background: var(--t-accent); }
+  .cover-1 .cover-date { margin-top: 1.5mm; color: rgba(255, 255, 255, .86); white-space: normal; }
+  .cover-1 .cover-main { display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; padding: 11mm 16mm 5mm 5mm; border-bottom: 1.5pt solid var(--t-primary); color: var(--ink); }
+  .cover-1 .cover-name { max-width: none; margin-top: 0; }
+  .cover-1 .cover-where, .cover-1 .cover-by { color: var(--muted); }
+  .cover-1 .cover-by { margin-top: 4mm; }
+  .cover-1 .cover-by span { color: var(--t-primary); font-weight: 600; }
+
+  /* 2: white cover with a large monogram block */
+  .cover-2 { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8mm; align-items: stretch; margin: 0 16mm; padding: 13mm 0 6mm; border-bottom: 1.5pt solid var(--t-primary); color: var(--ink); }
+  .cover-2.cover-plain { grid-template-columns: minmax(0, 1fr); }
+  .cover-mono { display: flex; align-items: center; justify-content: center; width: 36mm; min-height: 36mm; overflow: hidden; border-bottom: 1.8mm solid var(--t-accent); background: var(--t-primary); color: #fff; font-family: var(--serif); font-size: 30pt; line-height: 1; letter-spacing: .01em; white-space: nowrap; }
+  .cover-mono-small { font-size: 19pt; }
+  .cover-2 .cover-main { display: flex; flex-direction: column; min-width: 0; }
+  .cover-2 .cover-line { display: flex; align-items: baseline; justify-content: space-between; gap: 6mm; }
+  .cover-2 .cover-kind { color: var(--t-primary); }
+  .cover-2 .cover-date, .cover-2 .cover-where { color: var(--muted); }
+  .cover-2 .cover-name { max-width: none; margin-top: 2mm; }
+  .cover-2 .cover-by { margin-top: auto; padding-top: 4mm; color: var(--muted); }
+  .cover-2 .cover-by span { color: var(--t-primary); font-weight: 600; }
+
+  /* ---------- Summary ---------- */
   .summary { padding-top: 6.5mm; break-inside: avoid; }
+  .summary-grid { display: grid; grid-template-columns: minmax(0, 1fr) 58mm; column-gap: 10mm; align-items: start; }
+  .summary-grid-1 { grid-template-columns: minmax(0, 1fr); }
   .lead { color: var(--ink); font-family: var(--serif); font-size: 17pt; line-height: 1.25; letter-spacing: -.005em; overflow-wrap: anywhere; text-wrap: balance; }
+  .intro { max-width: 112mm; margin-top: 3mm; color: var(--text); font-size: 10pt; line-height: 1.5; overflow-wrap: anywhere; }
+  .insight { padding: 0.5mm 0 1mm 4.5mm; border-left: 2pt solid var(--t-primary); break-inside: avoid; }
+  .insight-label { color: var(--t-primary); font-size: 7.8pt; font-weight: 600; }
+  .insight-text { margin-top: 1mm; color: var(--ink); font-family: var(--serif); font-size: 10pt; line-height: 1.42; overflow-wrap: anywhere; }
   .counts { display: flex; flex-wrap: wrap; gap: 3mm 0; margin-top: 5mm; }
   .count { padding: 0 7mm; border-left: 0.5pt solid var(--rule); }
   .count:first-child { padding-left: 0; border-left: 0; }
   .count-n { display: block; color: var(--ink); font-family: var(--serif); font-size: 19pt; line-height: 1.1; }
   .count-l { display: flex; align-items: center; gap: 1.4mm; margin-top: 0.8mm; color: var(--text); font-size: 8.2pt; font-weight: 600; white-space: nowrap; }
   .count-plain { align-self: flex-end; color: var(--text); font-size: 9.4pt; font-weight: 600; }
-  .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 4.5mm; border-top: 0.5pt solid var(--rule); border-bottom: 0.5pt solid var(--rule); font-size: 8.6pt; }
+  .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 4mm; border-top: 0.5pt solid var(--rule); border-bottom: 0.5pt solid var(--rule); font-size: 8.6pt; }
   .fact { margin-bottom: -0.5pt; padding: 1.7mm 4mm 1.9mm 0; border-bottom: 0.5pt solid var(--rule); }
   .fact dt { color: var(--muted); font-size: 7.8pt; }
   .fact dd { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
 
-  /* Priority and status cues: a shape plus words, colour is only a helper */
+  /* No site to read: the concept leads, beside the introduction */
+  .opening { display: grid; grid-template-columns: minmax(0, 1fr) 106mm; column-gap: 9mm; align-items: start; padding-top: 7mm; break-inside: avoid; }
+  .opening .lead { font-size: 15.5pt; }
+  .opening .intro { margin-top: 3.5mm; }
+  .opening .insight { margin-top: 6mm; }
+  .opening-note { margin-top: 6mm; color: var(--muted); font-size: 8.4pt; }
+
+  /* ---------- Priority and status cues: a shape plus words; colour is only a helper ---------- */
   .dots { display: inline-flex; gap: 0.7mm; flex: none; }
   .dots i { width: 1.9mm; height: 1.9mm; border-radius: 50%; border: 0.6pt solid currentColor; }
   .dots-high { color: var(--red); }
@@ -201,19 +269,61 @@
   .status-urgent .status-mark { color: var(--red); background: currentColor; }
   .status-needs_work .status-mark { color: var(--amber); background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
   .status-minor .status-mark { color: var(--slate); }
+  .prio { flex: none; display: flex; align-items: center; gap: 1.5mm; color: var(--text); font-size: 7.8pt; font-weight: 600; white-space: nowrap; }
 
-  /* Sections */
+  /* ---------- Sections ---------- */
   .sec { margin-top: 7mm; }
-  .concept-page + .about { margin-top: 0; }
   .sec-head { break-inside: avoid; break-after: avoid; page-break-after: avoid; }
-  .sec-title {
-    padding-top: 3mm; border-top: 1.5pt solid var(--ink);
-    color: var(--ink); font-family: var(--serif); font-size: 15.5pt; font-weight: 400; line-height: 1.2; letter-spacing: -.005em;
-    break-after: avoid; page-break-after: avoid;
-  }
+  .sec-title { padding-top: 3mm; border-top: 1.5pt solid var(--t-primary); color: var(--ink); font-family: var(--serif); font-size: 15.5pt; font-weight: 400; line-height: 1.2; letter-spacing: -.005em; break-after: avoid; page-break-after: avoid; }
   .sec-intro { margin-top: 1.4mm; color: var(--muted); font-size: 9pt; text-wrap: pretty; }
 
-  /* Findings by area */
+  .fix { display: grid; grid-template-columns: 26mm minmax(0, 1fr); column-gap: 2mm; align-items: baseline; margin-top: 1.3mm; padding: 0.9mm 2.4mm 1.1mm; border-radius: 1.2mm; background: var(--t-tint); }
+  .fix-label { color: var(--t-primary); font-size: 7.8pt; font-weight: 600; white-space: nowrap; }
+  .fix-text { color: var(--ink); overflow-wrap: anywhere; }
+
+  /* ---------- Where to start: the loudest block in the document ---------- */
+  /* Kept whole when it fits; if it cannot, it may split between points, never inside one. */
+  .start { display: grid; grid-template-columns: 42mm minmax(0, 1fr); margin-top: 7mm; }
+  .start-side { padding: 6mm 5mm 6mm 6mm; background: var(--t-primary); color: #fff; }
+  .start-title { font-family: var(--serif); font-size: 18pt; line-height: 1.12; letter-spacing: -.008em; }
+  .start-text { margin-top: 2.5mm; color: rgba(255, 255, 255, .94); font-size: 8.8pt; line-height: 1.45; }
+  .start-list { padding: 1.5mm 6mm 2mm; background: var(--t-tint); }
+  .start-item { display: grid; grid-template-columns: 10mm minmax(0, 1fr); padding: 3.5mm 0 3.7mm; break-inside: avoid; page-break-inside: avoid; }
+  .start-item + .start-item { border-top: 0.5pt solid rgba(27, 30, 43, .16); }
+  .start-n { color: var(--t-primary); font-family: var(--serif); font-size: 22pt; line-height: .95; }
+  .start-top { display: flex; align-items: baseline; justify-content: space-between; gap: 5mm; }
+  .start-name { min-width: 0; color: var(--ink); font-size: 11pt; font-weight: 600; line-height: 1.28; overflow-wrap: anywhere; }
+  .start-area { margin-top: 0.3mm; color: var(--muted); font-size: 8pt; }
+  .start-what { margin-top: 1.2mm; overflow-wrap: anywhere; }
+  .start .fix { margin-top: 1.8mm; background: #fff; }
+  .start-single .start-item { grid-template-columns: minmax(0, 1fr); }
+
+  /* ---------- Plan: stages down a timeline ---------- */
+  .plan-body { margin-top: 5mm; }
+  .stage { position: relative; display: grid; grid-template-columns: 37mm minmax(0, 1fr); column-gap: 5mm; margin-left: 2.6mm; padding: 0 0 6mm 7.4mm; border-left: 1pt solid var(--t-primary); break-inside: avoid; page-break-inside: avoid; }
+  .stage:last-child { padding-bottom: 1mm; }
+  .stage-n { position: absolute; left: -2.9mm; top: -0.4mm; display: flex; align-items: center; justify-content: center; width: 5.6mm; height: 5.6mm; border-radius: 50%; background: var(--t-primary); color: #fff; font-size: 8.4pt; font-weight: 600; line-height: 1; box-shadow: 0 0 0 1mm #fff; }
+  .stage-title { color: var(--ink); font-family: var(--serif); font-size: 11.5pt; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+  .stage-about { margin-top: 1.2mm; color: var(--muted); font-size: 8.2pt; line-height: 1.4; overflow-wrap: anywhere; }
+  .steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3mm 7mm; }
+  .steps-1 { grid-template-columns: minmax(0, 1fr); }
+  .step { display: grid; grid-template-columns: 5mm minmax(0, 1fr); break-inside: avoid; }
+  .step-box { width: 2.9mm; height: 2.9mm; margin-top: 1mm; border: 0.8pt solid var(--t-primary); border-radius: 0.6mm; }
+  .step-action { color: var(--ink); overflow-wrap: anywhere; }
+  .step-because { margin-top: 0.3mm; color: var(--muted); font-size: 8pt; overflow-wrap: anywhere; }
+  .step-more { color: var(--muted); font-size: 8.6pt; padding-left: 5mm; align-self: center; }
+
+  /* ---------- What is already working ---------- */
+  .good-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.3mm 6mm; margin-top: 3.5mm; }
+  .good-list li { display: flex; align-items: flex-start; gap: 1.8mm; min-width: 0; color: var(--ink); overflow-wrap: anywhere; }
+  .good-list .tick { margin-top: 0.9mm; }
+  .good-lead { padding: 4.5mm 6mm 4.5mm; border-top: 1.5pt solid var(--t-primary); background: var(--t-tint); break-inside: avoid; }
+  .good-lead .sec-title { padding-top: 0; border-top: 0; }
+  .good-lead .good-list { gap: 1.7mm 6mm; margin-top: 4mm; }
+  .good-areas { margin-top: 4mm; padding-top: 2.6mm; border-top: 0.5pt solid rgba(27, 30, 43, .16); color: var(--muted); font-size: 8.6pt; }
+  .good-areas b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- Detail, area by area ---------- */
   .area { margin-top: 2.7mm; padding-top: 2.5mm; border-top: 0.75pt solid var(--ink); }
   .sec-head + .area { margin-top: 3.2mm; }
   .area-first { display: grid; grid-template-columns: 42mm minmax(0, 1fr); column-gap: 5mm; align-items: start; break-inside: avoid; page-break-inside: avoid; }
@@ -221,61 +331,43 @@
   .area-rest > * { margin-top: 2mm; padding-top: 2mm; border-top: 0.5pt solid var(--rule); }
   .area-title { color: var(--ink); font-family: var(--serif); font-size: 11pt; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
   .area-about { margin-top: 1.5mm; color: var(--muted); font-size: 8.2pt; line-height: 1.4; overflow-wrap: anywhere; }
-
-  .finding { display: grid; grid-template-columns: 7mm minmax(0, 1fr); break-inside: avoid; page-break-inside: avoid; }
-  .finding-n { color: var(--muted); font-size: 8.4pt; font-weight: 600; line-height: 1.6; font-variant-numeric: tabular-nums; }
+  .finding { break-inside: avoid; page-break-inside: avoid; }
   .finding-top { display: flex; align-items: baseline; justify-content: space-between; gap: 5mm; }
   .finding-title { color: var(--ink); font-size: 9.8pt; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; min-width: 0; }
-  .prio { flex: none; display: flex; align-items: center; gap: 1.5mm; color: var(--text); font-size: 7.8pt; font-weight: 600; white-space: nowrap; }
   .finding-what { margin-top: 0.5mm; overflow-wrap: anywhere; }
-  .fix { display: grid; grid-template-columns: 26mm minmax(0, 1fr); column-gap: 2mm; align-items: baseline; margin-top: 1.2mm; padding: 0.8mm 2.4mm 1mm; border-radius: 1.2mm; background: var(--wash); }
-  .fix-label { color: var(--accent); font-size: 7.8pt; font-weight: 600; white-space: nowrap; }
-  .fix-text { color: var(--ink); overflow-wrap: anywhere; }
+  .finding-see { margin-top: 0.3mm; color: var(--muted); font-size: 8.6pt; }
+  .clear { margin-top: 3.2mm; padding-top: 2.4mm; border-top: 0.75pt solid var(--ink); break-inside: avoid; break-before: avoid; page-break-before: avoid; }
+  .clear p { display: grid; grid-template-columns: 47mm minmax(0, 1fr); color: var(--ink); font-size: 9pt; overflow-wrap: anywhere; }
+  .clear p + p { margin-top: 1mm; }
+  .clear-label { color: var(--muted); font-size: 8pt; font-weight: 600; line-height: 1.6; }
+  .clear b { font-weight: 600; }
 
-  .passed { break-inside: avoid; page-break-inside: avoid; }
-  .passed-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 5mm; }
-  .passed-row .passed-items { flex: 1 1 auto; min-width: 0; }
-  .passed-row .status { flex: none; margin-top: 0; line-height: 1.6; white-space: nowrap; }
-  .passed-items { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.8mm 6mm; font-size: 9pt; }
-  .passed-items-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .passed-items-run { display: flex; flex-wrap: wrap; gap: 0.6mm 5mm; }
-  .passed-items li { display: flex; align-items: flex-start; gap: 1.8mm; overflow-wrap: anywhere; min-width: 0; }
-  .passed-items .passed-label { color: var(--muted); font-size: 8pt; font-weight: 600; line-height: 1.6; }
-  .passed-items .tick { margin-top: 0.85mm; }
-  .area-first > .passed { padding-top: 0.5mm; }
-
-  /* What we would do: kept whole when it fits on a page */
+  /* ---------- What we would do ---------- */
   .recs-keep { break-inside: avoid; page-break-inside: avoid; }
   .rec-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 9mm; margin-top: 1.5mm; }
   .rec-grid-1 { grid-template-columns: minmax(0, 110mm); }
   .rec { padding: 2.5mm 0 2.7mm; border-bottom: 0.5pt solid var(--rule); break-inside: avoid; page-break-inside: avoid; }
   .rec-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4mm; }
   .rec-title { color: var(--ink); font-size: 9.8pt; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; min-width: 0; }
-  .tag { flex: none; padding: 0.1mm 1.7mm 0.3mm; border: 0.5pt solid var(--accent); border-radius: 1mm; color: var(--accent); font-size: 7.4pt; font-weight: 600; white-space: nowrap; }
+  .tag { flex: none; padding: 0.1mm 1.7mm 0.3mm; border: 0.5pt solid var(--t-primary); border-radius: 1mm; color: var(--t-primary); font-size: 7.4pt; font-weight: 600; white-space: nowrap; }
   .rec-detail { margin-top: 0.8mm; overflow-wrap: anywhere; }
 
-  /* Homepage concept, on a page of its own */
+  /* ---------- Homepage concept ---------- */
   .concept-page { margin-top: 0; break-before: page; page-break-before: always; break-after: page; page-break-after: always; break-inside: avoid; }
-  .frame {
-    --k: 0.43;
-    margin-top: 5mm;
-    width: calc(1440px * var(--k) + 2px);
-    border: 1px solid #BFC3D4; border-radius: 2.4mm; overflow: hidden; background: #fff;
-    break-inside: avoid; page-break-inside: avoid;
-  }
-  .frame-bar { display: flex; align-items: center; gap: 2.6mm; height: 6.4mm; padding: 0 2.6mm; border-bottom: 1px solid #BFC3D4; background: #ECEDF4; }
+  .concept-page .frame { width: 163mm; margin-top: 5mm; }
+  .frame { border: 1px solid #BFC3D0; border-radius: 2.2mm; overflow: hidden; background: #fff; break-inside: avoid; page-break-inside: avoid; }
+  .frame-bar { display: flex; align-items: center; gap: 2.6mm; height: 6mm; padding: 0 2.6mm; border-bottom: 1px solid #BFC3D0; background: #ECEDF2; }
   .frame-dots { display: flex; gap: 1.1mm; flex: none; }
-  .frame-dots i { width: 2mm; height: 2mm; border-radius: 50%; background: #C2C6D6; }
-  .frame-addr { flex: 1 1 auto; min-width: 0; height: 4mm; padding: 0 2.6mm; border-radius: 2mm; background: #fff; color: var(--muted); font-size: 6.6pt; line-height: 4mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .frame-view { width: calc(1440px * var(--k)); height: calc(1800px * var(--k)); overflow: hidden; }
-  .frame-view > .cx { transform: scale(var(--k)); transform-origin: 0 0; }
-  .concept-notes { width: calc(1440px * 0.43 + 2px); margin-top: 2.6mm; font-size: 8pt; line-height: 1.4; }
-  .concept-label { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
-  .concept-shows { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6mm 4mm; margin-top: 1mm; color: var(--muted); }
-  .concept-shows li { display: flex; align-items: center; gap: 1.3mm; white-space: nowrap; }
-  .concept-shows .tick { stroke: var(--accent); }
+  .frame-dots i { width: 1.9mm; height: 1.9mm; border-radius: 50%; background: #C2C6D2; }
+  .frame-addr { flex: 1 1 auto; min-width: 0; height: 3.8mm; padding: 0 2.6mm; border-radius: 1.9mm; background: #fff; color: var(--muted); font-size: 6.4pt; line-height: 3.8mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .frame-img { display: block; width: 100%; height: auto; aspect-ratio: 4 / 5; object-fit: cover; object-position: top; }
+  .frame-label { margin-top: 2.4mm; color: var(--ink); font-size: 8pt; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+  .shows { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6mm 4mm; margin-top: 1mm; color: var(--muted); font-size: 8pt; }
+  .shows li { display: flex; align-items: center; gap: 1.3mm; white-space: nowrap; }
+  .shows .tick { stroke: var(--t-primary); }
 
-  /* About the sender */
+  /* ---------- About the sender ---------- */
+  .concept-page + .about { margin-top: 0; }
   .about-grid { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 10mm; align-items: start; margin-top: 4mm; }
   .about-grid-2 { grid-template-columns: minmax(0, 1fr) 72mm; }
   .about-lead { color: var(--ink); font-size: 10.2pt; overflow-wrap: anywhere; }
@@ -283,28 +375,28 @@
   .services { margin-top: 5mm; }
   .services ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 6mm; margin-top: 1.2mm; border-top: 0.5pt solid var(--rule); }
   .services li { padding: 1.5mm 0; border-bottom: 0.5pt solid var(--rule); color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
-  .reply { padding: 5mm 5.5mm 5.5mm; border-radius: 1.6mm; background: var(--band); color: #fff; break-inside: avoid; }
+  .reply { padding: 5mm 5.5mm 5.5mm; border-radius: 1.6mm; background: var(--t-primary); color: #fff; break-inside: avoid; }
   .reply-title { font-family: var(--serif); font-size: 13pt; font-weight: 400; line-height: 1.25; }
-  .reply-text { margin-top: 1.8mm; color: #E4E5F6; font-size: 8.8pt; }
-  .reply-ways { margin-top: 3.5mm; border-top: 0.5pt solid rgba(255, 255, 255, .28); }
-  .reply-way { padding: 1.7mm 0 1.9mm; border-bottom: 0.5pt solid rgba(255, 255, 255, .28); }
-  .reply-way dt { color: var(--band-soft); font-size: 7.8pt; }
+  .reply-text { margin-top: 1.8mm; color: rgba(255, 255, 255, .94); font-size: 8.8pt; }
+  .reply-ways { margin-top: 3.5mm; border-top: 0.5pt solid rgba(255, 255, 255, .4); }
+  .reply-way { padding: 1.7mm 0 1.9mm; border-bottom: 0.5pt solid rgba(255, 255, 255, .4); }
+  .reply-way dt { color: rgba(255, 255, 255, .86); font-size: 7.8pt; }
   .reply-way dd { font-size: 9.6pt; font-weight: 600; overflow-wrap: anywhere; }
   .work { margin-top: 8mm; break-inside: avoid; }
   .work-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 9mm; margin-top: 1.2mm; border-top: 0.5pt solid var(--rule); }
   .work-item { padding: 2.8mm 0 3mm; border-bottom: 0.5pt solid var(--rule); break-inside: avoid; }
   .work-name { color: var(--ink); font-size: 9.8pt; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
   .work-desc { margin-top: 0.6mm; overflow-wrap: anywhere; }
-  .work-url { margin-top: 0.8mm; color: var(--accent); font-size: 8.4pt; overflow-wrap: anywhere; }
+  .work-url { margin-top: 0.8mm; color: var(--t-primary); font-size: 8.4pt; overflow-wrap: anywhere; }
   .work-more { margin-top: 3mm; color: var(--muted); font-size: 8.8pt; overflow-wrap: anywhere; }
-  .work-more a, .work-more span { color: var(--accent); font-weight: 600; }
+  .work-more a, .work-more span { color: var(--t-primary); font-weight: 600; }
 
   .method { margin-top: 10mm; padding-top: 2.6mm; border-top: 0.5pt solid var(--rule); color: var(--muted); font-size: 7.6pt; line-height: 1.5; break-inside: avoid; }
   .method p { max-width: 150mm; }
 
   @media screen {
-    html { background: #E9EAF1; }
-    body { width: 210mm; margin: 8mm auto; padding-bottom: 14mm; box-shadow: 0 2mm 8mm rgba(27, 30, 51, .16); }
+    html { background: #E9EAF0; }
+    body { width: 210mm; margin: 8mm auto; padding-bottom: 14mm; box-shadow: 0 2mm 8mm rgba(27, 30, 43, .16); }
     .concept-page { margin-top: 9mm; }
   }
 </style>
@@ -312,49 +404,112 @@
 <body>
 <div class="doc">
 
-  <header class="cover">
-    <h1>
-      <span class="cover-kind">{{ doc_kind }}</span>
-      {% if lead.name %}
-      <span class="cover-name{% if name_len > 70 %} cover-name-xlong{% elif name_len > 34 %} cover-name-long{% endif %}">{{ lead.name }}</span>
-      {% endif %}
-    </h1>
+  {% if cover == 1 %}
+  <header class="cover cover-1">
+    <div class="cover-side">
+      <div>
+        <p class="cover-kind">{{ doc_kind }}</p>
+        {% if generated_on %}
+        <p class="cover-date">{{ generated_on }}</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="cover-main">
+      <h1 class="cover-name {{ name_class }}">{{ lead.name or doc_kind }}</h1>
+      {{ cover_where() }}
+      {{ cover_by() }}
+    </div>
+  </header>
+  {% elif cover == 2 %}
+  <header class="cover cover-2{% if not initials %} cover-plain{% endif %}">
+    {% if initials %}
+    <div class="cover-mono{% if initials|length > 2 %} cover-mono-small{% endif %}" aria-hidden="true">{{ initials }}</div>
+    {% endif %}
+    <div class="cover-main">
+      <div class="cover-line">
+        <p class="cover-kind">{{ doc_kind }}</p>
+        {% if generated_on %}
+        <p class="cover-date">{{ generated_on }}</p>
+        {% endif %}
+      </div>
+      <h1 class="cover-name {{ name_class }}">{{ lead.name or doc_kind }}</h1>
+      {{ cover_where() }}
+      {{ cover_by() }}
+    </div>
+  </header>
+  {% else %}
+  <header class="cover cover-0">
+    <p class="cover-kind">{{ doc_kind }}</p>
     {% if generated_on %}
     <p class="cover-date">{{ generated_on }}</p>
     {% endif %}
-    {% if lead.category or lead.address %}
-    <p class="cover-where">{% if lead.category %}<span>{{ lead.category }}</span>{% endif %}{% if lead.address %}<span>{{ lead.address }}</span>{% endif %}</p>
-    {% endif %}
-    {% if sender.byline or studio %}
-    <p class="cover-by"><span>Prepared by</span> {{ sender.byline or studio }}</p>
-    {% endif %}
+    <h1 class="cover-name {{ name_class }}">{{ lead.name or doc_kind }}</h1>
+    {{ cover_where() }}
+    {{ cover_by() }}
   </header>
+  {% endif %}
 
   <div class="sheet">
 
-    <section class="summary">
+    {% if lead_concept %}
+    {# No site to read: the concept leads. #}
+    <section class="opening">
+      <div>
         {% if summary.headline %}
         <p class="lead">{{ summary.headline }}</p>
         {% endif %}
-        {% if n_high or n_medium or n_low or n_passed %}
-        <ul class="counts">
-          {% if n_high %}
-          <li class="count"><span class="count-n">{{ n_high }}</span><span class="count-l">{{ dots('high') }}{{ ns.high }}</span></li>
-          {% endif %}
-          {% if n_medium %}
-          <li class="count"><span class="count-n">{{ n_medium }}</span><span class="count-l">{{ dots('medium') }}{{ ns.medium }}</span></li>
-          {% endif %}
-          {% if n_low %}
-          <li class="count"><span class="count-n">{{ n_low }}</span><span class="count-l">{{ dots('low') }}{{ ns.low }}</span></li>
-          {% endif %}
-          {% if n_passed %}
-          <li class="count"><span class="count-n">{{ n_passed }}</span><span class="count-l">{{ tick() }}{{ 'check passed' if n_passed == 1 else 'checks passed' }}</span></li>
-          {% endif %}
-          {% if site_read and n_passed and not (n_high or n_medium or n_low or ns.total) %}
-          <li class="count count-plain">Nothing that needs fixing</li>
-          {% endif %}
-        </ul>
+        {% if summary.intro %}
+        <p class="intro">{{ summary.intro }}</p>
         {% endif %}
+        {% if summary.insight %}
+        <div class="insight">
+          <p class="insight-label">Why it matters</p>
+          <p class="insight-text">{{ summary.insight }}</p>
+        </div>
+        {% endif %}
+        <p class="opening-note">The picture is a concept, not a finished design: it uses sample wording and simple shapes in place of your own text and photos.</p>
+      </div>
+      <div>
+        {{ frame(true) }}
+      </div>
+    </section>
+    {% else %}
+    <section class="summary">
+      <div class="summary-grid{% if not summary.insight %} summary-grid-1{% endif %}">
+        <div>
+          {% if summary.headline %}
+          <p class="lead">{{ summary.headline }}</p>
+          {% endif %}
+          {% if summary.intro %}
+          <p class="intro">{{ summary.intro }}</p>
+          {% endif %}
+        </div>
+        {% if summary.insight %}
+        <div class="insight">
+          <p class="insight-label">Why it matters</p>
+          <p class="insight-text">{{ summary.insight }}</p>
+        </div>
+        {% endif %}
+      </div>
+      {% if site_read and (n_high or n_medium or n_low or n_passed) %}
+      <ul class="counts">
+        {% if n_high %}
+        <li class="count"><span class="count-n">{{ n_high }}</span><span class="count-l">{{ dots('high') }}{{ ns.high }}</span></li>
+        {% endif %}
+        {% if n_medium %}
+        <li class="count"><span class="count-n">{{ n_medium }}</span><span class="count-l">{{ dots('medium') }}{{ ns.medium }}</span></li>
+        {% endif %}
+        {% if n_low %}
+        <li class="count"><span class="count-n">{{ n_low }}</span><span class="count-l">{{ dots('low') }}{{ ns.low }}</span></li>
+        {% endif %}
+        {% if n_passed %}
+        <li class="count"><span class="count-n">{{ n_passed }}</span><span class="count-l">{{ tick() }}{{ 'check passed' if n_passed == 1 else 'checks passed' }}</span></li>
+        {% endif %}
+        {% if n_passed and not (n_high or n_medium or n_low or ns.total) %}
+        <li class="count count-plain">Nothing that needs fixing</li>
+        {% endif %}
+      </ul>
+      {% endif %}
       {% if has_facts %}
       <dl class="facts">
         {% if lead.website %}
@@ -381,51 +536,150 @@
       </dl>
       {% endif %}
     </section>
+    {% endif %}
 
-    {% if areas %}
-    <section class="sec findings">
-      <div class="sec-head">
-        <h2 class="sec-title">{{ 'What we found' if ns.total else 'What we checked' }}</h2>
-        {% if ns.total %}
-        <p class="sec-intro">For each point: what we saw, why it matters and what we would change.</p>
-        {% elif ns.any_passed %}
-        <p class="sec-intro">Nothing here needs fixing. These are the checks that were run, area by area.</p>
-        {% endif %}
+    {% if prios %}
+    <section class="start{% if prios|length == 1 %} start-single{% endif %}">
+      <div class="start-side">
+        <h2 class="start-title">Where to start</h2>
+        <p class="start-text">
+          {% if prios|length == 1 %}
+          The one change that would make the most difference.
+          {% else %}
+          The {{ ['', '', 'two', 'three'][prios|length] }} changes that would make the most difference, in the order we would take them.
+          {% endif %}
+        </p>
       </div>
-      {% for area in areas %}
-      {% set fs = area.findings or [] %}
+      <ol class="start-list">
+        {% for f in prios %}
+        <li class="start-item">
+          {% if prios|length > 1 %}
+          <div class="start-n">{{ loop.index }}</div>
+          {% endif %}
+          <div>
+            <div class="start-top">
+              <h3 class="start-name">{{ f.title }}</h3>
+              {{ prio(f) }}
+            </div>
+            {% if f.area %}
+            <p class="start-area">{{ f.area }}</p>
+            {% endif %}
+            {% if f.what %}
+            <p class="start-what">{{ f.what }}</p>
+            {% endif %}
+            {{ fix(f) }}
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+
+    {% if good and not ns.total and site_read %}
+    {# Nothing to fix: what works is the lead of the report. #}
+    <section class="sec good-lead">
+      <h2 class="sec-title">What is already working</h2>
+      <p class="sec-intro">{{ 'Every check came back fine.' if good|length > 1 else 'The check came back fine.' }}</p>
+      <ul class="good-list">
+        {% for item in good %}
+        <li>{{ tick() }}<span>{{ item }}</span></li>
+        {% endfor %}
+      </ul>
+      {% if clear_areas %}
+      <p class="good-areas">Areas looked at: {% for a in clear_areas %}<b>{{ a.title }}</b>{{ ', ' if not loop.last else '.' }}{% endfor %}</p>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if show_plan %}
+    <section class="sec plan">
+      <div class="sec-head">
+        <h2 class="sec-title">A plan, in stages</h2>
+        <p class="sec-intro">{{ 'Start with what is quick, then build up. Each step can be ticked off on its own.' if stages|length > 1 else 'Each step can be ticked off on its own.' }}</p>
+      </div>
+      <div class="plan-body">
+        {% for s in stages %}
+        {% set more = s.more|default(0, true)|int %}
+        <div class="stage">
+          <div class="stage-n" aria-hidden="true">{{ loop.index }}</div>
+          <div>
+            <h3 class="stage-title">{{ s.title }}</h3>
+            {% if s.about %}
+            <p class="stage-about">{{ s.about }}</p>
+            {% endif %}
+          </div>
+          <ul class="steps{% if s.steps|length + (1 if more else 0) == 1 %} steps-1{% endif %}">
+            {% for step in s.steps %}
+            <li class="step">
+              <span class="step-box" aria-hidden="true"></span>
+              <div>
+                <p class="step-action">{{ step.action }}</p>
+                {% if step.because %}
+                <p class="step-because">Fixes: {{ step.because }}</p>
+                {% endif %}
+              </div>
+            </li>
+            {% endfor %}
+            {% if more > 0 %}
+            <li class="step-more">and {{ more }} more{{ ', set out in the detail below' if show_detail else '' }}</li>
+            {% endif %}
+          </ul>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if good and ns.total and site_read %}
+    <section class="sec good">
+      <div class="sec-head">
+        <h2 class="sec-title">What is already working</h2>
+      </div>
+      <ul class="good-list">
+        {% for item in good %}
+        <li>{{ tick() }}<span>{{ item }}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if show_detail %}
+    <section class="sec detail">
+      <div class="sec-head">
+        <h2 class="sec-title">The detail, area by area</h2>
+        <p class="sec-intro">For each point: what we saw, why it matters and what we would change.</p>
+      </div>
+      {% for area in ns.detail %}
       <div class="area">
         <div class="area-first">
-          <div class="area-side">
+          <div>
             <h3 class="area-title">{{ area.title }}</h3>
-            {% if fs or not area.passed %}
             {{ status(area) }}
-            {% endif %}
-            {# All-clear areas stay on one line: title, checks, status. #}
-            {% if area.about and (fs or not area.passed) %}
+            {% if area.about %}
             <p class="area-about">{{ area.about }}</p>
             {% endif %}
           </div>
-          {% if fs %}
-          {% set ns.n = ns.n + 1 %}
-          {{ finding(fs[0], ns.n) }}
-          {% elif area.passed %}
-          {{ passed_list(area, false) }}
-          {% endif %}
+          {{ finding(area.findings[0]) }}
         </div>
-        {% if fs|length > 1 or (fs and area.passed) %}
+        {% if area.findings|length > 1 %}
         <div class="area-rest">
-          {% for f in fs[1:] %}
-          {% set ns.n = ns.n + 1 %}
-          {{ finding(f, ns.n) }}
+          {% for f in area.findings[1:] %}
+          {{ finding(f) }}
           {% endfor %}
-          {% if fs and area.passed %}
-          {{ passed_list(area, true) }}
-          {% endif %}
         </div>
         {% endif %}
       </div>
       {% endfor %}
+      {% if ns.covered or clear_areas %}
+      <div class="clear">
+        {% if ns.covered %}
+        <p><span class="clear-label">Set out under &ldquo;Where to start&rdquo;</span><span>{% for a in ns.covered %}<b>{{ a.title }}</b>{{ ', ' if not loop.last }}{% endfor %}</span></p>
+        {% endif %}
+        {% if clear_areas %}
+        <p><span class="clear-label">Nothing to fix in</span><span>{% for a in clear_areas %}<b>{{ a.title }}</b>{{ ', ' if not loop.last }}{% endfor %}</span></p>
+        {% endif %}
+      </div>
+      {% endif %}
     </section>
     {% endif %}
 
@@ -433,7 +687,7 @@
     <section class="sec recs{% if recommendations|length <= 8 %} recs-keep{% endif %}">
       <div class="sec-head">
         <h2 class="sec-title">What we would do</h2>
-        <p class="sec-intro">{{ 'The work we would suggest, based on the points above.' if ns.total else 'One suggestion, if it is useful.' if recommendations|length == 1 else 'A few suggestions, if they are useful.' }}</p>
+        <p class="sec-intro">{{ 'The work we would suggest, based on the points above.' if (ns.total or prios) else ('One idea, if it is useful.' if recommendations|length == 1 else 'A few ideas, if they are useful.') }}</p>
       </div>
       <div class="rec-grid{% if recommendations|length == 1 %} rec-grid-1{% endif %}">
         {% for r in recommendations %}
@@ -453,36 +707,30 @@
     </section>
     {% endif %}
 
-    {% if concept %}
-    {% set cf = concept.features or {} %}
+    {% if img and not lead_concept %}
+    {% set cf = (concept.features if concept else none) or {} %}
     <section class="sec concept-page">
       <div class="sec-head">
         <h2 class="sec-title">How your homepage could look</h2>
-        <p class="sec-intro">This is a concept, not a finished design: it uses sample wording and simple shapes in place of your own text and photos.</p>
+        <p class="sec-intro">
+          {% if concept and concept.uses_own_words %}
+          This is a concept, not a finished design: your own headline and wording, set in a sample layout.
+          {% else %}
+          This is a concept, not a finished design: it uses sample wording and simple shapes in place of your own text and photos.
+          {% endif %}
+        </p>
       </div>
-        <figure class="frame">
-          <div class="frame-bar"><span class="frame-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="frame-addr">Concept preview</span></div>
-          <div class="frame-view">
-{% include "_concept.html.j2" %}
-          </div>
-        </figure>
-        {% if concept.label or cf.booking or cf.enquiry_form or cf.tap_to_call or cf.chat or cf.reviews %}
-        <div class="concept-notes">
-          {% if concept.label %}
-          <p class="concept-label">{{ concept.label }}</p>
-          {% endif %}
-          {% if cf.booking or cf.enquiry_form or cf.tap_to_call or cf.chat or cf.reviews %}
-          <ul class="concept-shows">
-            <li>It shows</li>
-            {% if cf.booking %}<li>{{ tick() }}<span>Online booking</span></li>{% endif %}
-            {% if cf.enquiry_form %}<li>{{ tick() }}<span>Enquiry form</span></li>{% endif %}
-            {% if cf.tap_to_call %}<li>{{ tick() }}<span>Tap-to-call</span></li>{% endif %}
-            {% if cf.chat %}<li>{{ tick() }}<span>Chat</span></li>{% endif %}
-            {% if cf.reviews %}<li>{{ tick() }}<span>Your reviews</span></li>{% endif %}
-          </ul>
-          {% endif %}
-        </div>
-        {% endif %}
+      {{ frame(true) }}
+      {% if cf.booking or cf.enquiry_form or cf.tap_to_call or cf.chat or cf.reviews %}
+      <ul class="shows">
+        <li>It shows</li>
+        {% if cf.booking %}<li>{{ tick() }}<span>Online booking</span></li>{% endif %}
+        {% if cf.enquiry_form %}<li>{{ tick() }}<span>Enquiry form</span></li>{% endif %}
+        {% if cf.tap_to_call %}<li>{{ tick() }}<span>Tap-to-call</span></li>{% endif %}
+        {% if cf.chat %}<li>{{ tick() }}<span>Chat</span></li>{% endif %}
+        {% if cf.reviews %}<li>{{ tick() }}<span>Your reviews</span></li>{% endif %}
+      </ul>
+      {% endif %}
     </section>
     {% endif %}
 
@@ -495,7 +743,7 @@
         <h2 class="sec-title">{% if studio %}About {{ studio }}{% else %}Who prepared this{% endif %}</h2>
       </div>
       <div class="about-grid{% if can_reply %} about-grid-2{% endif %}">
-        <div class="about-main">
+        <div>
           {% if sender.name and sender.studio %}
           <p class="about-lead">This review was prepared by {{ sender.name }} of {{ sender.studio }}.</p>
           {% elif studio %}

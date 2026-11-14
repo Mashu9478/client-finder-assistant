@@ -2082,7 +2082,15 @@ function renderReportSection() {
   els.dReportFull.hidden = !shown;
 
   const when = fmtWhen(report.generated_at);
-  fillIfChanged(els.dReportMeta, when, () => (when ? [h('span', null, `Created ${when.replace(/^(Today|Yesterday)/, (word) => word.toLowerCase())}`)] : []));
+  const designedBy = report.designer === 'claude' ? 'Designed by Claude for this business' : 'Built-in design in this business\u2019s colours';
+  const created = when ? `created ${when.replace(/^(Today|Yesterday)/, (word) => word.toLowerCase())}` : '';
+  const metaText = [designedBy, created].filter(Boolean).join(' \u00b7 ');
+  fillIfChanged(els.dReportMeta, metaText, () => [h('span', null, metaText)]);
+  const reportNote = typeof report.note === 'string' ? report.note : '';
+  if (els.dReportNote) {
+    els.dReportNote.hidden = !reportNote;
+    fillIfChanged(els.dReportNote, reportNote, () => (reportNote ? [icon('alert'), h('p', null, reportNote)] : []));
+  }
 
   setOff(els.dReportPdf, busy || !pdf);
   setOff(els.dReportOpen, busy || !pdf);
@@ -2121,7 +2129,14 @@ async function createReport(id) {
   if (route.view === 'leads') renderLeads();
   refreshReportSection();
   if (shown()) showReportSection(); // bring the "Creating…" line into view
-  announce(`Creating the report and picture for ${name}. This takes up to half a minute.`);
+  const byClaude = state.settings && state.settings.email_writer === 'claude';
+  const waitText = byClaude
+    ? 'Claude is designing a homepage for this business and writing the report\u2026 this can take two to three minutes.'
+    : 'Creating the report and picture\u2026 this takes up to half a minute.';
+  if (els.dReportBusyText) els.dReportBusyText.textContent = waitText;
+  announce(byClaude
+    ? `Claude is designing a homepage and report for ${name}. This can take two to three minutes.`
+    : `Creating the report and picture for ${name}. This takes up to half a minute.`);
 
   try {
     const updated = await api(`/api/leads/${id}/report`, { method: 'POST' });
@@ -2432,6 +2447,7 @@ function cacheElements() {
     dEmailAttach: $('d-email-attach'), dEmailStale: $('d-email-stale'),
     dReportSection: $('d-report-section'), dReportTitle: $('d-report-title'), dReportBusy: $('d-report-busy'),
     dReportError: $('d-report-error'), dReportLoading: $('d-report-loading'), dReportEmpty: $('d-report-empty'),
+    dReportNote: $('d-report-note'), dReportBusyText: $('d-report-busy-text'),
     dReportCreate: $('d-report-create'), dReportCreateLabel: $('d-report-create-label'), dReportHint: $('d-report-hint'),
     dReportReady: $('d-report-ready'), dReportFrame: $('d-report-frame'), dReportImg: $('d-report-img'),
     dReportImgMissing: $('d-report-img-missing'), dReportFull: $('d-report-full'), dReportMeta: $('d-report-meta'),

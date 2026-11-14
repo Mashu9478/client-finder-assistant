@@ -19,7 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import __version__, config, db
-from .audit import normalize_url
+from .audit import USER_AGENT, normalize_url
+from .designer import DesignError, design_concept, fetch_image_data_uri, write_narrative
 from .emailer import EmailError, write_email
 from .render import RenderError, make_report_files
 from .report import build_context
@@ -317,13 +318,46 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         settings = config.public_settings()
         if not (settings.get("your_name") or "").strip():
             raise HTTPException(400, "Add your name in Settings first, so the report can say who prepared it.")
-        context = build_context(lead, settings)
+        # Each new report for the same business gets a different design.
+        attempt = db.report_count(lead_id)
+        base = build_context(lead, settings)
+        variant = base["concept"]["variant"] + attempt
+
+        client = jobs.client
+        profile = audit.get("profile") or {}
+        hero_image = None
+        if profile.get("og_image") and client is not None:
+            hero_image = await fetch_image_data_uri(client, profile["og_image"], {"User-Agent": USER_AGENT})
+
+        claude_key = config.get_secret("claude_api_key")
+        context = build_context(lead, settings, variant=variant, hero_image=hero_image)
+        concept_html: Optional[str] = None
+        note: Optional[str] = None
+        if claude_key and client is not None:
+            # Claude designs the homepage and writes the opening, both for this one business.
+            design, narrative = await asyncio.gather(
+                design_concept(client, claude_key, settings["claude_model"], context, attempt),
+                write_narrative(client, claude_key, settings["claude_model"], context),
+                return_exceptions=True,
+            )
+            if isinstance(narrative, dict):
+                context = build_context(lead, settings, variant=variant, hero_image=hero_image, narrative=narrative)
+            if isinstance(design, str):
+                concept_html = design
+            elif isinstance(design, DesignError):
+                note = f"{design} One of the built-in designs was used instead. Press Create again to retry."
+            elif isinstance(design, Exception):
+                note = "Claude's design could not be used. One of the built-in designs was used instead."
+
         async with report_lock:
             try:
-                await asyncio.to_thread(make_report_files, context, config.report_dir(lead_id))
+                files = await asyncio.to_thread(make_report_files, context, config.report_dir(lead_id), concept_html)
             except RenderError as exc:
                 raise HTTPException(500, str(exc))
-        db.set_report(lead_id, True)
+        designer = "claude" if files.get("used_custom_concept") else "builtin"
+        if concept_html and designer == "builtin":
+            note = "Claude's design could not be turned into a picture. One of the built-in designs was used instead."
+        db.set_report(lead_id, True, designer, note)
         return db.get_lead(lead_id)  # type: ignore[return-value]
 
     @app.get("/api/leads/{lead_id}/report.pdf")
